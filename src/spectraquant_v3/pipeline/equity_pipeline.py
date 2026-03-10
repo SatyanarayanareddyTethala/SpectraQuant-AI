@@ -16,12 +16,13 @@ from spectraquant_v3.core.enums import AssetClass, RunMode, RunStage, RunStatus
 from spectraquant_v3.core.context import RunContext
 from spectraquant_v3.core.schema import QARow
 from spectraquant_v3.equities.features.engine import EquityFeatureEngine
-from spectraquant_v3.equities.signals.momentum import EquityMomentumAgent
 from spectraquant_v3.equities.symbols.registry import build_registry_from_config
 from spectraquant_v3.equities.universe.builder import EquityUniverseBuilder
 from spectraquant_v3.pipeline.allocator import Allocator
 from spectraquant_v3.pipeline.meta_policy import MetaPolicy
 from spectraquant_v3.pipeline.reporter import PipelineReporter
+from spectraquant_v3.strategies.agents.registry import AgentRegistry
+from spectraquant_v3.strategies.agents.runner import run_signal_agent
 
 
 def run_equity_pipeline(
@@ -134,10 +135,20 @@ def run_equity_pipeline(
         # ------------------------------------------------------------------
         # Stage 5: Signals
         # ------------------------------------------------------------------
-        signal_agent = EquityMomentumAgent.from_config(cfg, run_id=ctx.run_id)
+        strategy_id = str(cfg.get("_strategy_id", "equity_momentum_v1"))
+        primary_agent = strategy_id
+        agents = cfg.get("strategies", {}).get(strategy_id, {}).get("agents", [])
+        if agents:
+            primary_agent = str(agents[0])
+
+        agent_cls = AgentRegistry.get(primary_agent)
+        if hasattr(agent_cls, "from_config"):
+            signal_agent = agent_cls.from_config(cfg, run_id=ctx.run_id)
+        else:
+            signal_agent = agent_cls(run_id=ctx.run_id)
 
         if feature_map:
-            signals = signal_agent.evaluate_many(feature_map, as_of=as_of)
+            signals = run_signal_agent(signal_agent, feature_map, as_of=as_of)
         else:
             import pandas as _pd
             signals = [
