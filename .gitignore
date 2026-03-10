@@ -1,10 +1,70 @@
+# ── Virtual environments ────────────────────────────────────────────────────
 .venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.DS_Store
+venv/
+env/
 .env
-*.log
+.env.*
+!.env.example
+
+# ── Python caches ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── Packaging / build artifacts ──────────────────────────────────────────────
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+MANIFEST
+
+# ── Test / coverage artifacts ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.lcov
+
+# ── Generated reports and run outputs ────────────────────────────────────────
+reports/
+research_runs/
+
+# ── Runtime data caches ───────────────────────────────────────────────────────
+data/news_cache/
+data/research/
+
+# ── Serialized models / binary artifacts ─────────────────────────────────────
 *.pkl
 *.joblib
 *.parquet
+*.h5
+*.hdf5
+*.onnx
+*.pt
+*.pth
+*.bin
+
+# ── Local databases and logs ─────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# ── Notebook checkpoints ─────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── OS / IDE clutter ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Temporary files ───────────────────────────────────────────────────────────
+*.tmp
+*.bak
+tmp/
