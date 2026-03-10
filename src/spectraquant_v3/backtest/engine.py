@@ -57,7 +57,7 @@ import numpy as np
 import pandas as pd
 
 from spectraquant_v3.backtest.results import BacktestResults, RebalanceSnapshot
-from spectraquant_v3.core.enums import AssetClass
+from spectraquant_v3.core.enums import AssetClass, SignalStatus
 from spectraquant_v3.core.errors import DataSchemaError, EmptyPriceDataError
 from spectraquant_v3.execution.simulator import ExecutionSimulator
 from spectraquant_v3.pipeline.allocator import Allocator
@@ -241,8 +241,8 @@ class BacktestEngine:
 
         # Generate signals
         signals = run_signal_agent(self._signal_agent, feature_map, as_of=as_of_str)
-        signals_ok = sum(1 for s in signals if s.status == "OK")
-        signals_nosig = sum(1 for s in signals if s.status == "NO_SIGNAL")
+        signals_ok = sum(1 for s in signals if s.status == SignalStatus.OK.value)
+        signals_nosig = sum(1 for s in signals if s.status == SignalStatus.NO_SIGNAL.value)
 
         # Meta-policy
         decisions = self._meta_policy.run(signals)
@@ -256,8 +256,10 @@ class BacktestEngine:
 
         no_signal_reasons: dict[str, int] = {}
         for s in signals:
-            if s.status == "NO_SIGNAL":
-                reason = s.rationale or "no_signal"
+            if s.status == SignalStatus.NO_SIGNAL.value:
+                # Prefer the structured no_signal_reason field; fall back to
+                # rationale (for agents that predate the field) then a sentinel.
+                reason = s.no_signal_reason or s.rationale or "no_signal"
                 no_signal_reasons[reason] = no_signal_reasons.get(reason, 0) + 1
 
         # Allocate weights

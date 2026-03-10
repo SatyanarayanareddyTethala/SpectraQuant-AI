@@ -113,3 +113,16 @@ class DataSchemaError(SpectraQuantError):
     Every ingestor must return a DataFrame that passes schema validation
     before the data is written to cache or passed downstream.
     """
+
+
+class ContractViolationError(SpectraQuantError):
+    """Raised when a contract object is constructed with out-of-spec values.
+
+    Example triggers:
+    - ``SignalRow.signal_score`` outside the documented ``[-1.0, +1.0]`` range.
+    - ``SignalRow.confidence`` outside the documented ``[0.0, 1.0]`` range.
+
+    Note: the schema layer currently *clamps* values and logs a warning rather
+    than raising, to keep execution paths robust.  This error is reserved for
+    callers that need to enforce strict contract compliance.
+    """
