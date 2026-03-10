@@ -1,0 +1,23 @@
+# SpectraQuant-AI base configuration
+# Shared settings for both crypto and equity pipelines.
+# Asset-class-specific overrides live in crypto.yaml and equities.yaml.
+
+mlops:
+  seed: 42
+  walk_forward_splits: 3
+  drift_threshold: 0.6
+
+qa:
+  mode: lenient
+  max_abs_daily_return: 0.8
+
+data_retention:
+  initial_years_for_training: 10
+  post_training_years_to_keep: 5
+  enforce_on_download: true
+
+reporting:
+  enabled: true
+
+logging:
+  level: INFO

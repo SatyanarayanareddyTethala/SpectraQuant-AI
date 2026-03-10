@@ -1,0 +1,31 @@
+{
+  "command": "download",
+  "started_at": "2026-03-10T03:22:25.129578+00:00",
+  "ended_at": "2026-03-10T03:22:25.171570+00:00",
+  "finished_at": "2026-03-10T03:22:25.171570+00:00",
+  "duration_seconds": 0.041992,
+  "status": "failed",
+  "inputs": [
+    "config.yaml"
+  ],
+  "outputs": [],
+  "warnings": [],
+  "failures": [
+    "ERROR Command download failed: News-first mode is active (--from-news) but no news candidates file was found in reports/news/. Run 'spectraquant news-scan' first to generate candidates."
+  ],
+  "errors": [
+    {
+      "type": "log_error",
+      "message": "ERROR Command download failed: News-first mode is active (--from-news) but no news candidates file was found in reports/news/. Run 'spectraquant news-scan' first to generate candidates.",
+      "stack": null
+    },
+    {
+      "type": "NewsUniverseEmptyError",
+      "message": "News-first mode is active (--from-news) but no news candidates file was found in reports/news/. Run 'spectraquant news-scan' first to generate candidates.",
+      "stack": "Traceback (most recent call last):\n  File \"/Users/siddwork/SpectraQuant-AI-V2/src/spectraquant/core/diagnostics.py\", line 111, in run_summary\n    yield summary\n  File \"/Users/siddwork/SpectraQuant-AI-V2/src/spectraquant/cli/main.py\", line 4235, in main\n    commands[command]()\n  File \"/Users/siddwork/SpectraQuant-AI-V2/src/spectraquant/cli/main.py\", line 1859, in cmd_download\n    tickers, meta = _resolve_download_tickers(config, from_news=from_news)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/siddwork/SpectraQuant-AI-V2/src/spectraquant/cli/main.py\", line 1721, in _resolve_download_tickers\n    raise NewsUniverseEmptyError(\nspectraquant.cli.main.NewsUniverseEmptyError: News-first mode is active (--from-news) but no news candidates file was found in reports/news/. Run 'spectraquant news-scan' first to generate candidates."
+    }
+  ],
+  "quality_gates": [],
+  "universe_count": null,
+  "tickers_used": []
+}

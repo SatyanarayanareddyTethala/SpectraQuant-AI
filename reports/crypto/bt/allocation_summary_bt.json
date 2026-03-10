@@ -1,0 +1,101 @@
+{
+  "run_id": "bt",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-10T04:31:13.040325+00:00",
+  "total_symbols": 10,
+  "active_positions": 10,
+  "blocked_positions": 0,
+  "total_weight": 0.542459,
+  "allocations": [
+    {
+      "run_id": "bt",
+      "canonical_symbol": "ADA",
+      "asset_class": "crypto",
+      "target_weight": 0.07403952365605171,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "AVAX",
+      "asset_class": "crypto",
+      "target_weight": 0.010919936397514936,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "BNB",
+      "asset_class": "crypto",
+      "target_weight": 0.053569907497207726,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "BTC",
+      "asset_class": "crypto",
+      "target_weight": 0.2,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "DOGE",
+      "asset_class": "crypto",
+      "target_weight": 0.11810337127086815,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "DOT",
+      "asset_class": "crypto",
+      "target_weight": 0.025465100842668665,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "ETH",
+      "asset_class": "crypto",
+      "target_weight": 0.004653783319455952,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "LINK",
+      "asset_class": "crypto",
+      "target_weight": 0.015214037235024007,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "SOL",
+      "asset_class": "crypto",
+      "target_weight": 0.006254808084664166,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt",
+      "canonical_symbol": "XRP",
+      "asset_class": "crypto",
+      "target_weight": 0.03423845971965454,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    }
+  ]
+}

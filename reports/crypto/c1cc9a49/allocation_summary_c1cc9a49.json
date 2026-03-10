@@ -1,0 +1,101 @@
+{
+  "run_id": "c1cc9a49",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-06T13:44:05.777920+00:00",
+  "total_symbols": 10,
+  "active_positions": 0,
+  "blocked_positions": 10,
+  "total_weight": 0,
+  "allocations": [
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "ADA",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "AVAX",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "BNB",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "BTC",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "DOGE",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "DOT",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "ETH",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "LINK",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "SOL",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "c1cc9a49",
+      "canonical_symbol": "XRP",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "all_no_signal",
+      "expected_turnover": 0.0
+    }
+  ]
+}

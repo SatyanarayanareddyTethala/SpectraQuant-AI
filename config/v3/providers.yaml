@@ -1,0 +1,61 @@
+crypto_providers:
+  ccxt: &id001
+    enabled: true
+    exchange: binance
+    rate_limit_ms: 250
+    timeout_seconds: 30
+    retry_attempts: 3
+    retry_backoff_seconds: 2.0
+  cryptocompare:
+    enabled: true
+    base_url: https://min-api.cryptocompare.com/data
+    rate_limit_ms: 100
+    timeout_seconds: 30
+    retry_attempts: 3
+  coingecko:
+    enabled: true
+    base_url: https://api.coingecko.com/api/v3
+    rate_limit_ms: 1200
+    timeout_seconds: 30
+    retry_attempts: 3
+  binance_futures:
+    enabled: false
+    base_url: https://fapi.binance.com
+    rate_limit_ms: 250
+    timeout_seconds: 30
+  bybit:
+    enabled: false
+    base_url: https://api.bybit.com
+    rate_limit_ms: 500
+    timeout_seconds: 30
+  glassnode:
+    enabled: false
+    base_url: https://api.glassnode.com
+    rate_limit_ms: 1000
+    timeout_seconds: 60
+  cryptopanic:
+    enabled: false
+    base_url: https://cryptopanic.com/api/v1
+    rate_limit_ms: 1000
+    timeout_seconds: 30
+equity_providers:
+  yfinance:
+    enabled: true
+    rate_limit_ms: 200
+    timeout_seconds: 30
+    retry_attempts: 3
+    retry_backoff_seconds: 2.0
+  rss:
+    enabled: false
+    timeout_seconds: 30
+    max_feeds: 10
+concurrency:
+  max_workers: 8
+  semaphore_limit: 4
+  async_timeout_seconds: 60
+ccxt: *id001
+retry:
+  attempts: 3
+  backoff_seconds: 2.0
+rate_limit:
+  default_ms: 250

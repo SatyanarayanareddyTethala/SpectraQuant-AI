@@ -1,0 +1,13 @@
+{
+  "experiment_id": "bt_weekly",
+  "strategy_id": "crypto_momentum_v1",
+  "dataset_version": "bt_weekly",
+  "config_hash": "e708a63aa301cce5",
+  "run_timestamp": "2026-03-06T18:26:44.787915+00:00",
+  "artefact_paths": {
+    "signals": "/Users/siddwork/SpectraQuant-AI-V2/reports/crypto/bt_weekly/signals_summary_bt_weekly.json",
+    "policy_decisions": "/Users/siddwork/SpectraQuant-AI-V2/reports/crypto/bt_weekly/policy_decisions_bt_weekly.json",
+    "allocation": "/Users/siddwork/SpectraQuant-AI-V2/reports/crypto/bt_weekly/allocation_summary_bt_weekly.json",
+    "run_report": "/Users/siddwork/SpectraQuant-AI-V2/reports/crypto/bt_weekly/run_report_bt_weekly.json"
+  }
+}

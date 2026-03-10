@@ -1,0 +1,13 @@
+{
+  "run_id": "bt_rolling_30",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-06T18:28:45.299904+00:00",
+  "universe_size": 10,
+  "signals_ok": 10,
+  "signals_no_signal": 0,
+  "signals_error": 0,
+  "policy_passed": 7,
+  "policy_blocked": 3,
+  "active_positions": 7,
+  "total_weight": -0.830952
+}

@@ -1,0 +1,12 @@
+{
+  "run_id": "81d318c2",
+  "asset_class": "crypto",
+  "run_mode": "normal",
+  "started_at": "2026-03-10T03:36:07.837330+00:00",
+  "completed_at": null,
+  "status": "aborted",
+  "stages": {},
+  "errors": [
+    "EmptyUniverseError: EMPTY_CRYPTO_UNIVERSE: 0 of 10 candidates passed filters in run '81d318c2'."
+  ]
+}

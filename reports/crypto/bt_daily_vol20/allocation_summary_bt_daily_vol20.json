@@ -1,0 +1,101 @@
+{
+  "run_id": "bt_daily_vol20",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-06T18:59:09.374095+00:00",
+  "total_symbols": 10,
+  "active_positions": 7,
+  "blocked_positions": 3,
+  "total_weight": -0.830952,
+  "allocations": [
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "ADA",
+      "asset_class": "crypto",
+      "target_weight": -0.133578,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "AVAX",
+      "asset_class": "crypto",
+      "target_weight": -0.144073,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "DOGE",
+      "asset_class": "crypto",
+      "target_weight": -0.134028,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "DOT",
+      "asset_class": "crypto",
+      "target_weight": 0.078139,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "ETH",
+      "asset_class": "crypto",
+      "target_weight": -0.14712,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "SOL",
+      "asset_class": "crypto",
+      "target_weight": -0.150292,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "XRP",
+      "asset_class": "crypto",
+      "target_weight": -0.2,
+      "blocked": false,
+      "blocked_reason": "",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "BNB",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "confidence=0.088 < min=0.1",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "BTC",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "confidence=0.016 < min=0.1",
+      "expected_turnover": 0.0
+    },
+    {
+      "run_id": "bt_daily_vol20",
+      "canonical_symbol": "LINK",
+      "asset_class": "crypto",
+      "target_weight": 0.0,
+      "blocked": true,
+      "blocked_reason": "confidence=0.018 < min=0.1",
+      "expected_turnover": 0.0
+    }
+  ]
+}

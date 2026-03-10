@@ -1,0 +1,122 @@
+{
+  "run_id": "6c15e694",
+  "as_of": "2026-03-06T13:44:13.759402+00:00",
+  "asset_class": "equity",
+  "included_count": 10,
+  "excluded_count": 0,
+  "included_symbols": [
+    "BHARTIARTL.NS",
+    "HDFCBANK.NS",
+    "HINDUNILVR.NS",
+    "ICICIBANK.NS",
+    "INFY.NS",
+    "KOTAKBANK.NS",
+    "RELIANCE.NS",
+    "SBIN.NS",
+    "TCS.NS",
+    "WIPRO.NS"
+  ],
+  "excluded_symbols": [],
+  "entries": [
+    {
+      "canonical_symbol": "RELIANCE.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "TCS.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "INFY.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "HDFCBANK.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "ICICIBANK.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "HINDUNILVR.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "WIPRO.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "BHARTIARTL.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "SBIN.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    },
+    {
+      "canonical_symbol": "KOTAKBANK.NS",
+      "asset_class": "equity",
+      "included": true,
+      "reason": "passed_all_gates",
+      "last_close": 0.0,
+      "avg_volume": 0.0,
+      "history_days": 0,
+      "source": "config"
+    }
+  ]
+}

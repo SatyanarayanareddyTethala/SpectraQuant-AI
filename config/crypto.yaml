@@ -1,0 +1,79 @@
+# SpectraQuant-AI Crypto Pipeline Configuration
+# Use with: spectraquant crypto-run
+#
+# CRITICAL: This config is for the crypto pipeline ONLY.
+# Do NOT mix with equity.yaml in a single run invocation.
+
+crypto:
+  enabled: true
+  environment: production
+
+  # Primary data providers
+  primary_ohlcv_provider: ccxt
+  exchanges:
+    - binance
+    - coinbase
+    - kraken
+
+  # Fallback / backfill (research mode only)
+  fallback_providers:
+    - coingecko
+    - cryptocompare
+
+  # Symbol universe
+  universe_mode: static          # static | dataset_topN | hybrid_news_dataset | news_first
+  universe_top_n: 20
+  symbols:
+    - BTC
+    - ETH
+    - SOL
+    - BNB
+    - XRP
+    - ADA
+    - DOGE
+    - AVAX
+    - LINK
+    - DOT
+
+  # Cache
+  prices_dir: data/crypto/prices
+  run_mode: normal               # normal | test | refresh
+
+  # Universe quality gates
+  quality_gate:
+    min_market_cap_usd: 50_000_000
+    min_24h_volume_usd: 1_000_000
+    min_age_days: 180
+
+  # Funding / OI
+  funding_enabled: false
+  onchain_enabled: false
+  news_enabled: false
+
+  # Reports
+  reports_dir: reports/crypto
+
+crypto_dataset:
+  path: data/crypto/cryptocurrency_dataset.csv
+  data_dir: data/crypto
+  refresh_cadence: daily
+  yfinance_overrides: {}
+  quality_gate:
+    min_market_cap_usd: 50_000_000
+    min_24h_volume_usd: 1_000_000
+    min_age_days: 180
+    min_community_rank: null
+
+# Execution (paper only by default)
+execution:
+  mode: paper
+  slippage_bps: 5
+  transaction_cost_bps: 5
+
+# Portfolio
+portfolio:
+  allocator: vol_target
+  target_vol: 0.15
+  max_weight: 0.25
+  max_turnover: 0.30
+  rebalance_frequency: daily

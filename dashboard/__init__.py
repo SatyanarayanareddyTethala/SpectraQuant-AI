@@ -1,0 +1,1 @@
+"""SpectraQuant dashboard package."""

@@ -1,0 +1,105 @@
+alpha:
+  enabled: false
+  weights:
+    momentum: 0.35
+    trend: 0.25
+    volatility: 0.2
+    value: 0.2
+portfolio:
+  rebalance: weekly
+  weighting: equal
+  alpha_threshold: -0.01
+  volatility_target: null
+  max_asset_weight: null
+  sector_limits: {}
+  sector_map: {}
+  top_k: 20
+  min_weight_threshold: 0.0
+  liquidity_min_volume: null
+  max_positions: 20
+  max_weight: null
+  max_turnover: null
+  policies: {}
+  policy:
+    auto_repair: false
+  horizon: 1d
+data:
+  tickers: []
+  synthetic: false
+  source: yfinance
+  provider: mock
+  batch_size: 50
+  batch_sleep_seconds: 3
+  max_retries: 3
+  daily_retention_years: 5
+  max_tickers_per_run: 300
+qa:
+  min_price_rows: 5
+  stale_tolerance_minutes: 10000000
+  flatline_window: 3
+  max_abs_daily_return: 0.8
+  min_expected_return_std_daily: 1e-6
+  min_expected_return_std_intraday: 1e-9
+  min_volume: 0
+  max_missing_pct: 0.2
+  force_pass_tests: false
+mlops:
+  auto_retrain: true
+  retrain_interval_days: 7
+  min_improvement: 0.0
+intraday:
+  enabled: true
+  interval: 5m
+  lookback_days: 30
+  fallback_intervals:
+  - 15m
+  - 30m
+  - 60m
+  refresh_seconds: 300
+  retention_days: 7
+  tickers: []
+  only_run_during_market_hours: false
+  off_hours_refresh_seconds: 1800
+  signal_thresholds:
+    buy: 0.5
+    sell: 0.4
+  top_n: 5
+execution:
+  mode: eod
+  slippage_bps: 5
+  transaction_cost_bps: 1
+  volume_participation: 0.1
+signals:
+  buy_threshold: 50.0
+  sell_threshold: -1.0
+  min_buy_signals: 1
+  min_buy_signals_test: 0
+universe:
+  india:
+    source: nse
+    tickers_file: tests/fixtures/universe_small.csv
+  uk:
+    source: lse
+    tickers_file: tests/fixtures/universe_small.csv
+  selected_sets:
+  - custom
+  dry_run: false
+research_mode: false
+test_mode: true
+predictions:
+  daily_horizons:
+  - 1d
+  - 5d
+  - 20d
+  intraday_horizons:
+  - 5m
+  - 30m
+  - 60m
+explain:
+  enabled: false
+perf:
+  max_seconds: 60
+  max_mb: 512
+  stages:
+    download:
+      max_seconds: 1800

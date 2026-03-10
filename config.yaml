@@ -1,0 +1,239 @@
+alpha:
+  enabled: true
+  weights:
+    momentum: 0.35
+    trend: 0.25
+    volatility: 0.2
+    value: 0.2
+portfolio:
+  rebalance: monthly
+  weighting: equal
+  alpha_threshold: -1000000000.0
+  volatility_target: null
+  max_asset_weight: null
+  sector_limits: {}
+  sector_map: {}
+  top_k: 20
+  min_weight_threshold: 0.0
+  liquidity_min_volume: null
+  max_positions: 10
+  max_weight: null
+  max_turnover: null
+  policies: {}
+  policy:
+    auto_repair: false
+  horizon: 5d
+  allocation_mode: multi
+  live_single_step: false
+research_mode: false
+data:
+  tickers: []
+  synthetic: false
+  source: yfinance
+  provider: yfinance
+  prices_dir: data/prices
+  batch_size: 50
+  batch_sleep_seconds: 3
+  max_retries: 5
+  cooldown_seconds: 0
+  force_download: false
+  daily_retention_years: 5
+  max_tickers_per_run: 2000
+data_retention:
+  initial_years_for_training: 10
+  post_training_years_to_keep: 5
+  enforce_on_download: true
+  enforce_on_train_complete: true
+mlops:
+  auto_retrain: true
+  retrain_interval_days: 7
+  min_improvement: 0.01
+  seed: 42
+  walk_forward_splits: 3
+  drift_threshold: 0.6
+  drift_recent_fraction: 0.1
+qa:
+  price_return_source: auto
+  mode: lenient
+  max_abs_daily_return: 0.8
+intraday:
+  enabled: true
+  interval: 5m
+  lookback_days: 30
+  fallback_intervals:
+  - 15m
+  - 30m
+  - 60m
+  refresh_seconds: 300
+  retention_days: 7
+  tickers: []
+  only_run_during_market_hours: true
+  off_hours_refresh_seconds: 1800
+  signal_thresholds:
+    buy: 0.55
+    sell: 0.45
+  top_n: 5
+execution:
+  mode: eod
+  slippage_bps: 5
+  transaction_cost_bps: 1
+  volume_participation: 0.1
+predictions:
+  daily_horizons:
+  - 1d
+  - 5d
+  - 20d
+  intraday_horizons:
+  - 5m
+  - 30m
+  - 60m
+explain:
+  enabled: false
+perf:
+  max_seconds: 60000
+  max_mb: 51200
+  stages:
+    download:
+      max_seconds: 180000
+  stage_budgets_seconds:
+    refresh: 60000
+test_mode:
+  enabled: false
+  limit_tickers: 2
+sentiment:
+  enabled: true
+  provider: newsapi
+  lookback_days: 30
+  max_articles_per_ticker: 50
+  newsapi_max_lookback_days: 30
+  use_news: true
+  use_social: true
+  refresh_cache: true
+  social:
+    provider: stocktwits
+universe:
+  path: data/universe/universe_nse.csv
+  india:
+    source: csv
+    tickers_file: data/universe/universe_nse.csv
+    symbol_column: symbol
+    suffix: .NS
+    filter_series_eq: false
+    tickerset: null
+  uk:
+    source: lse
+    tickers_file: data/universe/lse_all.csv
+    tickerset: null
+  selected_sets:
+  - india
+  dry_run: false
+news_universe:
+  enabled: true
+  lookback_hours: 24
+  max_candidates: 50
+  min_source_rank: 0.5
+  min_liquidity_avg_volume: 500000
+  sentiment_model: vader
+  require_price_confirmation: true
+  recency_decay_half_life_hours: 6
+intelligence:
+  enabled: true
+  storage_dir: data/state
+  max_memory_items: 10000
+  embedding_model: hashing
+  regime_window_days: 20
+  meta_update_freq: 7
+  planner_enabled: true
+  executor_enabled: true
+  portfolio_enabled: true
+  thresholds:
+    buy: 0.55
+    sell: 0.45
+    alpha: 0.0
+  exposure_caps:
+    gross: 1.5
+    name: 0.10
+    sector: 0.30
+  max_positions: 10
+  max_sector_exposure: 0.30
+  daily_loss_limit: 5000.0
+  cooldown_minutes: 60
+  alert_channels:
+    email: false
+
+crypto:
+  enabled: true
+  environment: production
+  endpoint: ws-feed
+  symbols:
+    - BTC-USD
+    - ETH-USD
+    - SOL-USD
+  timeframe: 1m
+  candle_intervals:
+    - 1m
+    - 5m
+  prices_dir: data/prices/crypto
+  universe_csv: src/spectraquant/crypto/universe/crypto_universe.csv
+  news_first: true
+  news_max_symbols: 10
+  news_strict: false
+  # Universe mode: news_first | dataset_topN | hybrid_news_dataset | static
+  universe_mode: static
+  universe_top_n: 20
+
+crypto_dataset:
+  # Path to the cryptocurrency_dataset.csv file
+  path: data/crypto/cryptocurrency_dataset.csv
+  # Directory for parquet artefacts (asset_master, market_snapshot, symbol_map)
+  data_dir: data/crypto
+  # How often to refresh the dataset (informational; not enforced automatically)
+  refresh_cadence: daily
+  # Extra canonical → yfinance symbol overrides (supplement built-in map)
+  yfinance_overrides: {}
+  # Quality gate thresholds for universe selection
+  quality_gate:
+    min_market_cap_usd: 50000000
+    min_24h_volume_usd: 1000000
+    min_age_days: 180
+    min_community_rank: null  # null = disabled
+
+news_ai:
+  enabled: true
+  lookback_hours: 24
+  recency_half_life_hours: 6
+  source_rank_min: 0.3
+  output_dir: reports/news
+
+onchain_ai:
+  enabled: true
+  refresh_minutes: 15
+  anomaly_threshold: 2.5
+  output_dir: reports/onchain
+
+agents:
+  enabled: true
+  list:
+    - momentum
+    - mean_reversion
+    - volatility
+    - carry_funding
+    - news_catalyst
+    - onchain_flow
+  output_dir: reports/agents
+
+crypto_meta_policy:
+  enabled: true
+  weighting: regime_perf
+  perf_lookback_days: 30
+  decay: 0.95
+  weight_floor: 0.05
+  weight_cap: 0.50
+
+crypto_portfolio:
+  allocator: vol_target
+  target_vol: 0.15
+  max_weight: 0.25
+  max_turnover: 0.30
+  stop_trading_drawdown: 0.10
+  rebalance_frequency: daily

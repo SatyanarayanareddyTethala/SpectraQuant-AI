@@ -1,0 +1,45 @@
+# SpectraQuant-AI Logging Configuration
+
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  simple:
+    format: "%(levelname)s %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    stream: ext://sys.stdout
+
+  file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: default
+    filename: logs/spectraquant.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 5
+    delay: true
+
+loggers:
+  spectraquant:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  spectraquant.equities:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+  spectraquant.crypto:
+    level: INFO
+    handlers: [console]
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console]

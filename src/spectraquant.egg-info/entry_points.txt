@@ -1,0 +1,3 @@
+[console_scripts]
+spectraquant = spectraquant.cli.main:main
+sqv3 = spectraquant_v3.cli.main:main

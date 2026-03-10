@@ -1,0 +1,122 @@
+# SpectraQuant-AI-V3 — Crypto Pipeline Configuration
+# Use with: sqv3 crypto run
+#
+# CRITICAL: This config is for the crypto pipeline ONLY.
+# Do NOT mix with equities.yaml in a single run invocation.
+# Doing so raises MixedAssetClassRunError.
+
+crypto:
+  # ---------------------------------------------------------------------------
+  # Data providers
+  # ---------------------------------------------------------------------------
+  primary_ohlcv_provider: ccxt          # ccxt | (future: paid feed)
+
+  # CCXT exchange priority order
+  exchanges:
+    - binance
+    - coinbase
+    - kraken
+
+  # Fallback / backfill (research mode only — not for live execution)
+  fallback_providers:
+    - coingecko
+    - cryptocompare
+
+  # ---------------------------------------------------------------------------
+  # Universe
+  # ---------------------------------------------------------------------------
+  # Universe mode:
+  #   static            – use the `symbols` list below
+  #   dataset_topN      – select top-N from ingested dataset by market cap
+  #   hybrid_news_dataset – merge news candidates with dataset top-N
+  #   news_first        – news-driven candidate selection only
+  universe_mode: static
+  universe_top_n: 20
+
+  symbols:
+    - BTC
+    - ETH
+    - SOL
+    - BNB
+    - XRP
+    - ADA
+    - DOGE
+    - AVAX
+    - LINK
+    - DOT
+
+  # ---------------------------------------------------------------------------
+  # Cache / run mode
+  # ---------------------------------------------------------------------------
+  prices_dir: data/cache/crypto/prices
+  run_mode: normal                       # normal | test | refresh
+
+  # ---------------------------------------------------------------------------
+  # Universe quality gates
+  # ---------------------------------------------------------------------------
+  quality_gate:
+    min_market_cap_usd: 50_000_000
+    min_24h_volume_usd: 1_000_000
+    min_age_days: 180
+    excluded_categories: []             # e.g. [stablecoin, wrapped]
+    require_tradable_mapping: true
+
+  universe_filters:
+    exclude_stablecoins: true
+    exclude_wrapped_assets: true
+    min_market_cap_usd: 50_000_000
+    min_daily_volume_usd: 1_000_000
+    min_listing_age_days: 180
+    require_exchange_coverage: true
+    required_exchanges: [binance, coinbase, kraken]
+    require_tradable_mapping: true
+    collect_all_fail_reasons: false
+    top_market_cap:
+      enabled: false
+      limit: 20
+
+  # ---------------------------------------------------------------------------
+  # Optional data modules (disabled by default; enable per run)
+  # ---------------------------------------------------------------------------
+  funding_enabled: false                # Binance Futures / Bybit / dYdX
+  onchain_enabled: false                # Glassnode
+  news_enabled: false                   # CryptoPanic / RSS
+
+  # ---------------------------------------------------------------------------
+  # Reports
+  # ---------------------------------------------------------------------------
+  reports_dir: reports/crypto
+
+# ---------------------------------------------------------------------------
+# Dataset ingestion (cryptocurrency_dataset.csv → parquet artefacts)
+# ---------------------------------------------------------------------------
+crypto_dataset:
+  path: data/crypto/cryptocurrency_dataset.csv
+  data_dir: data/crypto
+  refresh_cadence: daily
+  yfinance_overrides: {}
+  quality_gate:
+    min_market_cap_usd: 50_000_000
+    min_24h_volume_usd: 1_000_000
+    min_age_days: 180
+    min_community_rank: null           # null = disabled
+
+# ---------------------------------------------------------------------------
+# Portfolio (crypto-specific overrides on top of base.yaml defaults)
+# ---------------------------------------------------------------------------
+portfolio:
+  allocator: vol_target
+  target_vol: 0.15
+  max_weight: 0.25
+  max_turnover: 0.30
+  rebalance_frequency: daily
+
+# ---------------------------------------------------------------------------
+# Execution (paper only; CCXT live adapter is a placeholder)
+# ---------------------------------------------------------------------------
+execution:
+  mode: paper
+  slippage_bps: 5
+  transaction_cost_bps: 5
+backtest:
+  target_vol: 0.20

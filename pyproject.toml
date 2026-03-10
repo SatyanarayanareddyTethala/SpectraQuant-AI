@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spectraquant"
+version = "0.5.0"
+description = "SpectraQuant-Next production pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "pandas",
+  "PyYAML",
+  "yfinance",
+  "streamlit",
+  "pyarrow",
+  "scikit-learn",
+  "lightgbm",
+  "transformers",
+  "torch",
+  "SQLAlchemy>=2.0",
+  "websockets",
+  "aiohttp",
+  "pydantic",
+  "python-dotenv",
+  "tenacity",
+  "tqdm",
+  "python-dateutil",
+  "typer>=0.12",
+  "rich>=13.0",
+  "typing_extensions>=4.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+test = [
+  "pytest",
+]
+crypto = [
+  "ccxt",
+  "websockets",
+  "aiohttp",
+  "tenacity",
+]
+news = [
+  "sentence-transformers",
+  "nltk",
+  "beautifulsoup4",
+  "feedparser",
+  "newspaper3k",
+]
+onchain = [
+  "web3",
+  "requests",
+  "aiohttp",
+]
+opt = [
+  "scipy",
+  "statsmodels",
+  "cvxpy",
+  "riskfolio-lib",
+  "arch",
+]
+backtest = [
+  "vectorbt",
+  "empyrical",
+  "pyfolio-reloaded",
+]
+dash = [
+  "streamlit",
+  "plotly",
+  "altair",
+  "matplotlib",
+]
+all = [
+  "spectraquant[crypto,news,onchain,opt,backtest,dash]",
+]
+
+[project.scripts]
+spectraquant = "spectraquant.cli.main:main"
+sqv3 = "spectraquant_v3.cli.main:main"
+
+[tool.setuptools]
+include-package-data = true
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,15 @@
+{
+  "regime": "BEAR",
+  "timestamp_utc": "20260306T112552Z",
+  "decisions": [
+    {
+      "symbol": "BTC",
+      "blended_score": -2.7755575615628914e-17,
+      "confidence": 0.8,
+      "contributing_agents": [
+        "mean_reversion",
+        "momentum"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "command": "release-check",
+  "started_at": "2026-03-10T03:36:02.815238+00:00",
+  "ended_at": "2026-03-10T03:36:03.316278+00:00",
+  "finished_at": "2026-03-10T03:36:03.316278+00:00",
+  "duration_seconds": 0.50104,
+  "status": "success",
+  "inputs": [
+    "config.yaml",
+    "dataset.parquet",
+    "reports/predictions/research/predictions_20260310_033603.csv",
+    "reports/signals/research/top_signals_20260310_033603.csv",
+    "reports/portfolio/research/portfolio_weights.csv"
+  ],
+  "outputs": [
+    "dataset.csv",
+    "data/processed/dataset_metadata.json",
+    "dataset.parquet",
+    "reports/predictions/research/predictions_20260310_033603.csv",
+    "reports/qa/date_alignment_20260310_033603.csv",
+    "reports/signals/research/top_signals_20260310_033603.csv",
+    "reports/portfolio/research/portfolio_returns.csv",
+    "reports/portfolio/research/portfolio_weights.csv",
+    "reports/portfolio/research/portfolio_metrics.json",
+    "reports/execution/research/trades.csv",
+    "reports/execution/research/fills.csv",
+    "reports/execution/research/costs.csv",
+    "reports/execution/research/daily_pnl.csv",
+    "reports/run/run_manifest_20260310_033603.json"
+  ],
+  "warnings": [
+    "WARNING Eligible tickers 2 below qa.min_eligible_tickers=10 in test_mode; proceeding. initial_tickers=2; eligible=2; dropped_invalid_index=0; dropped_short_history=0; dropped_low_non_null=0; missing_close=0; return_errors=0; min_price_rows=5; min_non_null_ratio=0.98; min_eligible_tickers=10; kept_rows_min/median/max=5/5/5",
+    "WARNING Dataset history (2024-01-06 00:00:00+00:00 -> 2024-01-10 00:00:00+00:00) is shorter than 10 years; proceeding with available data.",
+    "WARNING LightGBM returns have near-zero dispersion (std=0.00e+00); augmenting with per-ticker tech signal.",
+    "WARNING No signals matched requested horizon '1d'; falling back to '60m' (available=5d, 60m).",
+    "WARNING Set portfolio.horizon: \"60m\" in config.yaml to target this horizon explicitly.",
+    "WARNING Signals and returns overlap by calendar date but not exact timestamp; normalizing signals to daily close timestamps."
+  ],
+  "failures": [],
+  "errors": [],
+  "quality_gates": [],
+  "universe_count": 2,
+  "tickers_used": [
+    "TICKER1.NS",
+    "TICKER2.L"
+  ]
+}

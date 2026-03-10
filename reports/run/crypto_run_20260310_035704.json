@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-10T03:57:04.658654+00:00",
+  "dry_run": true,
+  "universe_mode": "static",
+  "universe_size": 3,
+  "symbols": [
+    "BTC",
+    "ETH",
+    "SOL"
+  ],
+  "prices_loaded": 3,
+  "features_rows": 12,
+  "news_features_rows": 0,
+  "onchain_features_rows": 3,
+  "agent_signal_groups": 0,
+  "total_agent_signals": 0,
+  "blended_scores_count": 0,
+  "weights_count": 0
+}

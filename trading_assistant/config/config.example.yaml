@@ -1,0 +1,177 @@
+# SpectraQuant Trading Assistant Configuration
+# Copy to config.yaml and customize for your environment
+
+market:
+  timezone: "Asia/Kolkata"  # NSE timezone
+  open_time: "09:15:00"
+  close_time: "15:30:00"
+  premarket_plan_offset_minutes: 60  # Generate plan T-60 min before open
+  intraday_poll_seconds: 60  # Poll every 60 seconds during market hours
+
+universe:
+  source: "nse"  # nse, ftse, custom
+  symbols: []  # Leave empty to load from tickers_file
+  tickers_file: "data/universe/nse_500.csv"
+  min_adv: 1000000  # Minimum average daily volume in shares
+  max_spread_bps: 50  # Maximum bid-ask spread in basis points
+  min_market_cap: null  # Optional minimum market cap filter
+
+costs:
+  commission_per_trade: 20.0  # Fixed commission per trade
+  slippage_model:
+    base_bps: 5  # Base slippage in basis points
+    spread_weight: 0.5  # Weight for spread-based slippage
+    vol_weight: 0.3  # Weight for volatility-based slippage
+    participation_weight: 0.2  # Weight for participation-based slippage
+
+risk:
+  equity_base: 1000000  # Base equity in local currency
+  alpha_risk_fraction: 0.02  # Fraction of equity to risk per trade
+  b_max: 50000  # Maximum position size in currency
+  max_daily_loss: 20000  # Maximum daily loss limit
+  max_gross_exposure: 500000  # Maximum total gross exposure
+  max_name_exposure: 100000  # Maximum exposure per single name
+  max_sector_exposure: 200000  # Maximum exposure per sector
+  turnover_cap: 0.5  # Maximum daily turnover as fraction of portfolio
+  adv_participation_cap: 0.1  # Maximum participation in ADV
+  mae_threshold: 0.03  # Maximum adverse excursion threshold
+
+news:
+  providers:
+    - type: "newsapi"
+      api_key_env: "NEWSAPI_KEY"
+      enabled: true
+    - type: "rss"
+      urls:
+        - "https://economictimes.indiatimes.com/rssfeedstopstories.cms"
+      enabled: true
+  refresh_minutes: 60  # Fetch news every hour
+  risk_tags_thresholds:
+    high_risk: ["bankruptcy", "fraud", "lawsuit", "investigation"]
+    medium_risk: ["earnings miss", "downgrade", "management change"]
+    low_risk: ["product launch", "partnership", "expansion"]
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  min_relevance_score: 0.3
+
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  use_tls: true
+  username_env: "SMTP_USERNAME"
+  password_env: "SMTP_PASSWORD"
+  from_email: "trading.assistant@example.com"
+  to_emails:
+    - "trader@example.com"
+  subject_prefix: "[SpectraQuant]"
+  cooldown_minutes:
+    execute_now: 15  # Min 15 minutes between EXECUTE NOW for same symbol
+    news_update: 60  # Hourly news updates
+
+learning:
+  window_months: 12  # Rolling window for model training
+  nightly_recalibrate: true
+  weekly_retrain_day: 6  # 0=Monday, 6=Sunday
+  ranking_model:
+    type: "lightgbm"  # lightgbm, xgboost, sklearn
+    params:
+      n_estimators: 100
+      learning_rate: 0.05
+      max_depth: 5
+      num_leaves: 31
+      min_child_samples: 20
+  failure_model:
+    type: "lightgbm"  # logistic or lightgbm
+    params:
+      n_estimators: 50
+      learning_rate: 0.1
+      max_depth: 3
+  calibration:
+    method: "isotonic"  # isotonic or platt
+  ensemble_size: 3  # Number of models for uncertainty estimation
+  drift:
+    psi_threshold: 0.2  # Population Stability Index threshold
+    ks_threshold: 0.15  # Kolmogorov-Smirnov threshold
+    adwin_delta: 0.002  # ADWIN drift detection sensitivity
+    lookback_days: 30  # Days to look back for drift detection
+  promotion_gates:
+    min_net_improvement: 0.02  # Minimum 2% improvement in net returns
+    max_drawdown_increase: 0.05  # Max 5% increase in drawdown
+    min_calibration_improvement: 0.01  # Minimum calibration improvement
+    max_turnover_increase: 0.2  # Max 20% increase in turnover
+    min_sharpe_ratio: 0.5  # Minimum acceptable Sharpe ratio
+  rollback_rules:
+    underperform_days: 5  # Rollback if underperforming for N days
+    dd_breach_threshold: 0.15  # Rollback if drawdown exceeds 15%
+    min_win_rate: 0.35  # Minimum acceptable win rate
+
+features:
+  technical:
+    returns: [1, 5, 20]  # Return periods in days
+    volatility: [5, 20, 60]  # Volatility windows
+    moving_averages: [10, 20, 50, 200]
+    rsi_period: 14
+    atr_period: 14
+  liquidity:
+    volume_windows: [5, 20]
+    turnover_windows: [5, 20]
+    amihud_window: 20
+  cross_sectional:
+    sector_neutral: true
+    beta_window: 60
+    correlation_window: 60
+  regime:
+    volatility_regime_window: 60
+    trend_regime_window: 20
+
+database:
+  host: "localhost"
+  port: 5432
+  database: "trading_assistant"
+  username_env: "DB_USERNAME"
+  password_env: "DB_PASSWORD"
+  pool_size: 5
+  max_overflow: 10
+
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "logs/trading_assistant.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+scheduler:
+  timezone: "Asia/Kolkata"
+  tasks:
+    premarket_plan:
+      enabled: true
+      time: "08:15:00"  # T-60 min before market open
+    hourly_news:
+      enabled: true
+      interval_minutes: 60
+      active_hours: [9, 10, 11, 12, 13, 14, 15]  # During market hours
+    intraday_monitor:
+      enabled: true
+      interval_seconds: 60
+      active_hours: [9, 10, 11, 12, 13, 14, 15]
+    nightly_update:
+      enabled: true
+      time: "18:00:00"  # After market close
+    weekly_retrain:
+      enabled: true
+      day_of_week: 6  # Sunday
+      time: "02:00:00"
+
+simulation:
+  enabled: true  # Run in simulation mode with mock data
+  mock_data_days: 252  # Days of synthetic data to generate
+  seed: 42
+
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+
+dashboard:
+  enabled: true
+  port: 8501

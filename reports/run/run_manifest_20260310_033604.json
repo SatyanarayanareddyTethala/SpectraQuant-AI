@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-03-10T03:36:04.983992+00:00",
+  "git_commit": "6504fe5522144d6e0e2a7e25b420e9de6701f3b1",
+  "config_hash": "3ce3c7c9f5c234a7f7889c95bd8dcbb12264d157a9701aca58a888dab0813621",
+  "provider": "mock",
+  "provider_health": {},
+  "horizons": {
+    "daily": [
+      "1d",
+      "5d",
+      "20d"
+    ],
+    "intraday": [
+      "5m",
+      "30m",
+      "60m"
+    ]
+  },
+  "universe_files": [
+    "tests/fixtures/universe_small.csv",
+    "tests/fixtures/universe_small.csv"
+  ],
+  "universe_checksums": {
+    "tests/fixtures/universe_small.csv": "5054ac532179bdf92194f40873c77464dc83fccc5bb7e15f9a827946a56bd0f5"
+  },
+  "artifacts": {
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/predictions/research/predictions_20260310_033604.csv": "9ca362b418e4c668ed8351f5b3caa20417080b4aeea3d2e0f974b4d080cfaec8",
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/signals/research/top_signals_20260310_033604.csv": "e8f358f3c23097a0f96a4d690f62ff21541712aa4f3a8d1136ed29b406b9c39b",
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/portfolio/research/portfolio_returns.csv": "a9ccd31b9ea2f99663159e95b5e6f0d73c9c0e0026665f07bf573498481182da",
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/portfolio/research/portfolio_weights.csv": "710cc80c4edf61bfe4b0a50753fb0742ed40ce7de9cd4f6d74bf7719a3d3c877"
+  },
+  "artifact_schemas": {
+    "predictions": 5,
+    "signals": 1,
+    "portfolio_returns": 1,
+    "portfolio_weights": 1,
+    "execution_trades": 1,
+    "execution_fills": 1,
+    "execution_costs": 1,
+    "execution_pnl": 1,
+    "explainability": 1
+  },
+  "artifact_schema_versions": {
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/predictions/research/predictions_20260310_033604.csv": 5,
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/signals/research/top_signals_20260310_033604.csv": 1,
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/portfolio/research/portfolio_returns.csv": 1,
+    "/var/folders/bh/2t1q6cwn129c8s4x3rmm2phh0000gp/T/tmphbqt2z8m/reports/portfolio/research/portfolio_weights.csv": 1
+  },
+  "summary_metrics": {
+    "prediction_rows": 12,
+    "signal_rows": 3,
+    "missing_values_predictions": 12,
+    "missing_values_signals": 0,
+    "skipped_tickers": [],
+    "skipped_ticker_count": 0
+  },
+  "warnings": [],
+  "errors": []
+}

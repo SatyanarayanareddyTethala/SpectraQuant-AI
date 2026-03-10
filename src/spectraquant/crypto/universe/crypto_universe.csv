@@ -1,0 +1,28 @@
+symbol,name,sector,market_cap_rank,is_stablecoin
+BTC,Bitcoin,L1,1,false
+ETH,Ethereum,L1,2,false
+BNB,BNB,L1,3,false
+SOL,Solana,L1,4,false
+XRP,XRP,L1,5,false
+ADA,Cardano,L1,6,false
+AVAX,Avalanche,L1,7,false
+DOT,Polkadot,L1,8,false
+MATIC,Polygon,L2,9,false
+LINK,Chainlink,Oracle,10,false
+UNI,Uniswap,DeFi,11,false
+ATOM,Cosmos,Infrastructure,12,false
+LTC,Litecoin,L1,13,false
+ARB,Arbitrum,L2,14,false
+OP,Optimism,L2,15,false
+AAVE,Aave,DeFi,16,false
+MKR,Maker,DeFi,17,false
+SNX,Synthetix,DeFi,18,false
+INJ,Injective,DeFi,19,false
+FIL,Filecoin,Infrastructure,20,false
+GRT,The Graph,Infrastructure,21,false
+DOGE,Dogecoin,Meme,22,false
+SHIB,Shiba Inu,Meme,23,false
+PEPE,Pepe,Meme,24,false
+USDT,Tether,Stablecoin,25,true
+USDC,USD Coin,Stablecoin,26,true
+DAI,Dai,Stablecoin,27,true

@@ -1,0 +1,100 @@
+{
+  "run_id": "6c15e694",
+  "asset_class": "equity",
+  "generated_at": "2026-03-06T13:44:13.761076+00:00",
+  "total_symbols": 10,
+  "passed_count": 0,
+  "blocked_count": 10,
+  "decisions": [
+    {
+      "canonical_symbol": "BHARTIARTL.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "HDFCBANK.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "HINDUNILVR.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "ICICIBANK.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "INFY.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "KOTAKBANK.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "RELIANCE.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "SBIN.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "TCS.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    },
+    {
+      "canonical_symbol": "WIPRO.NS",
+      "asset_class": "equity",
+      "composite_score": 0.0,
+      "composite_confidence": 0.0,
+      "passed": false,
+      "reason": "all_no_signal",
+      "contributing_agents": []
+    }
+  ]
+}

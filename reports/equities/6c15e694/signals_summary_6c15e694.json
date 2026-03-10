@@ -1,0 +1,191 @@
+{
+  "run_id": "6c15e694",
+  "asset_class": "equity",
+  "generated_at": "2026-03-06T13:44:13.760844+00:00",
+  "total_signals": 10,
+  "ok_count": 0,
+  "no_signal_count": 10,
+  "error_count": 0,
+  "signals": [
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "BHARTIARTL.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "HDFCBANK.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "HINDUNILVR.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "ICICIBANK.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "INFY.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "KOTAKBANK.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "RELIANCE.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "SBIN.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "TCS.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    },
+    {
+      "run_id": "6c15e694",
+      "timestamp": "2026-03-06T13:44:13.759559+00:00",
+      "canonical_symbol": "WIPRO.NS",
+      "asset_class": "equity",
+      "agent_id": "equity_momentum_v1",
+      "horizon": "1m",
+      "signal_score": 0.0,
+      "confidence": 0.0,
+      "required_inputs": [
+        "ret_20d",
+        "rsi"
+      ],
+      "available_inputs": [],
+      "rationale": "insufficient_rows (0 < 20)",
+      "status": "NO_SIGNAL",
+      "error_reason": ""
+    }
+  ]
+}

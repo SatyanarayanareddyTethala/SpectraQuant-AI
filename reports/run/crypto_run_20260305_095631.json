@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-03-05T09:56:31.353605+00:00",
+  "dry_run": true,
+  "universe_size": 10,
+  "symbols": [
+    "BTC-USD",
+    "ETH-USD",
+    "SOL-USD",
+    "XRP-USD",
+    "DOGE-USD",
+    "BNB-USD",
+    "ADA-USD",
+    "LINK-USD",
+    "NEAR-USD",
+    "MATIC-USD"
+  ],
+  "prices_loaded": 0,
+  "features_rows": 0,
+  "news_features_rows": 10,
+  "onchain_features_rows": 10,
+  "agent_signal_groups": 0,
+  "total_agent_signals": 0,
+  "blended_scores_count": 0,
+  "weights_count": 0
+}

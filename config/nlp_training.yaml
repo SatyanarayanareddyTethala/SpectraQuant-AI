@@ -1,0 +1,102 @@
+# NLP Multi-Task Training Configuration
+
+# Model configuration
+model:
+  base_model: "distilbert-base-uncased"
+  max_length: 128
+  dropout: 0.1
+
+# Training configuration
+training:
+  batch_size: 16
+  learning_rate: 2.0e-5
+  num_epochs: 3
+  warmup_steps: 500
+  weight_decay: 0.01
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  
+# Multi-task heads configuration
+tasks:
+  sentiment_polarity:
+    enabled: true
+    num_labels: 3  # positive, negative, neutral
+    loss_weight: 1.0
+    
+  aspect:
+    enabled: true
+    num_labels: 5  # product, service, price, management, other
+    loss_weight: 1.0
+    
+  event_type:
+    enabled: true
+    num_labels: 8  # earnings, buyback, lawsuit, merger, acquisition, guidance_raise, guidance_cut, other
+    loss_weight: 1.5  # Higher weight for event detection
+    
+  negation:
+    enabled: true
+    num_labels: 2  # negated, not_negated
+    loss_weight: 0.8
+    
+  modality:
+    enabled: true
+    num_labels: 3  # factual, speculative, conditional
+    loss_weight: 0.8
+
+# Calibration configuration
+calibration:
+  enabled: true
+  method: "temperature_scaling"
+  validation_split: 0.2
+
+# Evaluation configuration
+evaluation:
+  metrics:
+    - "macro_f1"
+    - "micro_f1"
+    - "accuracy"
+    - "precision"
+    - "recall"
+  per_task: true
+  
+# Data configuration
+data:
+  train_path: "data/train.jsonl"
+  val_path: "data/val.jsonl"
+  test_path: "data/test.jsonl"
+  text_field: "text"
+  label_mapping:
+    sentiment_polarity:
+      positive: 0
+      negative: 1
+      neutral: 2
+    aspect:
+      product: 0
+      service: 1
+      price: 2
+      management: 3
+      other: 4
+    event_type:
+      earnings: 0
+      buyback: 1
+      lawsuit: 2
+      merger: 3
+      acquisition: 4
+      guidance_raise: 5
+      guidance_cut: 6
+      other: 7
+    negation:
+      negated: 0
+      not_negated: 1
+    modality:
+      factual: 0
+      speculative: 1
+      conditional: 2
+
+# Output configuration
+output:
+  model_dir: "models/multitask"
+  checkpoint_dir: "checkpoints/multitask"
+  log_dir: "logs/multitask"
+  save_steps: 500
+  eval_steps: 100

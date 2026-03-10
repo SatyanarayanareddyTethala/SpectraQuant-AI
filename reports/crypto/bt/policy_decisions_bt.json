@@ -1,0 +1,120 @@
+{
+  "run_id": "bt",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-10T04:31:13.040130+00:00",
+  "total_symbols": 10,
+  "passed_count": 10,
+  "blocked_count": 0,
+  "decisions": [
+    {
+      "canonical_symbol": "ADA",
+      "asset_class": "crypto",
+      "composite_score": -0.8600736212128172,
+      "composite_confidence": 0.8600736212128172,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "AVAX",
+      "asset_class": "crypto",
+      "composite_score": -0.33826795120776565,
+      "composite_confidence": 0.33826795120776565,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "BNB",
+      "asset_class": "crypto",
+      "composite_score": 0.8297201648351082,
+      "composite_confidence": 0.8297201648351082,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "BTC",
+      "asset_class": "crypto",
+      "composite_score": 0.9393242000683475,
+      "composite_confidence": 0.9393242000683475,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "DOGE",
+      "asset_class": "crypto",
+      "composite_score": -0.9146249569644531,
+      "composite_confidence": 0.9146249569644531,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "DOT",
+      "asset_class": "crypto",
+      "composite_score": 0.5916262129953188,
+      "composite_confidence": 0.5916262129953188,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "ETH",
+      "asset_class": "crypto",
+      "composite_score": 0.18020088344968385,
+      "composite_confidence": 0.18020088344968385,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "LINK",
+      "asset_class": "crypto",
+      "composite_score": 0.412375895841182,
+      "composite_confidence": 0.412375895841182,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "SOL",
+      "asset_class": "crypto",
+      "composite_score": -0.21797528564712504,
+      "composite_confidence": 0.21797528564712504,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    },
+    {
+      "canonical_symbol": "XRP",
+      "asset_class": "crypto",
+      "composite_score": -0.6628800983969577,
+      "composite_confidence": 0.6628800983969577,
+      "passed": true,
+      "reason": "passed_all_filters",
+      "contributing_agents": [
+        "crypto_cross_sectional_momentum_v1"
+      ]
+    }
+  ]
+}

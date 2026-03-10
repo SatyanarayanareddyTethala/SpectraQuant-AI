@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #dc3545; color: white; padding: 20px; border-radius: 5px; text-align: center; }
+        .alert-badge { font-size: 2em; margin-bottom: 10px; }
+        .content { padding: 20px; background: #fff; border: 3px solid #dc3545; border-radius: 5px; margin: 20px 0; }
+        .trade-details { background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .detail-row { margin: 10px 0; }
+        .label { font-weight: bold; color: #666; display: inline-block; width: 120px; }
+        .value { color: #000; font-weight: bold; }
+        .action { background: #28a745; color: white; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; font-size: 1.2em; }
+        .warnings { background: #fff3cd; padding: 15px; margin: 15px 0; border-left: 4px solid #ffc107; }
+        .footer { margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 0.85em; color: #666; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="alert-badge">🔔</div>
+            <h1>EXECUTE NOW</h1>
+            <p>Trigger Activated</p>
+        </div>
+        
+        <div class="content">
+            <h2 style="margin-top: 0;">{{ alert.symbol }}</h2>
+            
+            <div class="trade-details">
+                <div class="detail-row">
+                    <span class="label">Action:</span>
+                    <span class="value" style="color: #28a745;">{{ alert.action }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Entry Price:</span>
+                    <span class="value">{{ "%.2f"|format(alert.entry_price) }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Stop Loss:</span>
+                    <span class="value">{{ "%.2f"|format(alert.stop_price) }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Target:</span>
+                    <span class="value">{{ "%.2f"|format(alert.target_price) }}</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Position Size:</span>
+                    <span class="value">{{ alert.size_shares }} shares</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Risk/Reward:</span>
+                    <span class="value">{{ "%.2f"|format(alert.risk_reward_ratio) }}</span>
+                </div>
+            </div>
+            
+            <div class="action">
+                Recommended Entry: {{ alert.entry_type }}
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <h3>Trigger Details</h3>
+                <p><strong>Type:</strong> {{ alert.trigger_type }}</p>
+                <p><strong>Signal:</strong> {{ alert.trigger_description }}</p>
+                <p><strong>Timestamp:</strong> {{ alert.triggered_at }}</p>
+            </div>
+            
+            <div class="warnings">
+                <h4>⚠️ Pre-Trade Checklist</h4>
+                <ul>
+                    <li>Verify current market price</li>
+                    <li>Check liquidity and spread</li>
+                    <li>Confirm no adverse news</li>
+                    <li>Ensure daily loss limit not breached</li>
+                    <li>Verify position sizing limits</li>
+                </ul>
+            </div>
+            
+            {% if alert.market_conditions %}
+            <div style="margin: 20px 0;">
+                <h4>Market Conditions</h4>
+                <p><strong>Volatility:</strong> {{ alert.market_conditions.volatility }}</p>
+                <p><strong>Trend:</strong> {{ alert.market_conditions.trend }}</p>
+                <p><strong>Volume:</strong> {{ alert.market_conditions.volume }}</p>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="footer">
+            <p><strong>Plan ID:</strong> {{ alert.plan_id }}</p>
+            <p>This is an automated alert. Verify all information before executing.</p>
+            <p>⚠️ Research purposes only. Not financial advice.</p>
+        </div>
+    </div>
+</body>
+</html>

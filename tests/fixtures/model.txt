@@ -1,0 +1,7 @@
+version=v3
+num_class=1
+num_tree_per_iteration=1
+label_index=0
+max_feature_idx=5
+feature_names=sentiment_score rsi_14 sma_10 momentum_5 volume_volatility price_return
+feature_importances=10 20 30 15 12 13

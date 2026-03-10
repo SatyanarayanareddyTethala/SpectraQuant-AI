@@ -1,0 +1,68 @@
+# SpectraQuant-AI Equity Pipeline Configuration
+# Use with: spectraquant equity-run
+#
+# CRITICAL: This config is for the equity pipeline ONLY.
+# Do NOT mix with crypto.yaml in a single run invocation.
+
+equities:
+  # Primary data provider: yfinance (research mode)
+  # Replace with official vendor adapter when moving to production.
+  primary_ohlcv_provider: yfinance
+
+  # Cache behaviour: normal | test | refresh
+  run_mode: normal
+
+  # Cache directory for equity OHLCV parquet files
+  prices_dir: data/equities/prices
+
+  # Reports directory
+  reports_dir: reports/equities
+
+  # Universe: define symbols here or point to a CSV file
+  universe:
+    tickers:
+      - RELIANCE.NS
+      - TCS.NS
+      - INFY.NS
+      - HDFCBANK.NS
+      - ICICIBANK.NS
+      - HINDUNILVR.NS
+      - WIPRO.NS
+      - BHARTIARTL.NS
+      - SBIN.NS
+      - KOTAKBANK.NS
+    # Optionally point to a CSV file with a 'ticker' column:
+    # tickers_file: data/equities/universe/universe.csv
+    exclude: []
+
+  # Universe quality gates (applied post-download)
+  quality_gate:
+    min_price: 10.0
+    min_avg_volume: 100_000
+    min_history_days: 60
+
+  # Signal agents configuration
+  signals:
+    momentum_lookback: 20
+    rsi_period: 14
+    mean_reversion_window: 20
+    breakout_window: 52
+
+  # Portfolio allocation
+  max_weight: 0.20
+  min_signal_threshold: 0.05
+  min_confidence: 0.15
+
+  # Execution (paper only by default)
+  execution:
+    mode: paper
+    slippage_bps: 5
+    transaction_cost_bps: 10
+
+# Data config used by price downloader
+data:
+  provider: yfinance
+  prices_dir: data/equities/prices
+  batch_size: 20
+  max_retries: 3
+  daily_retention_years: 5

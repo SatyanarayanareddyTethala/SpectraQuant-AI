@@ -1,0 +1,4 @@
+ticker,date,horizon,score,signal,rank,regime,schema_version
+TICKER2.L,2024-01-02 08:00:00+00:00,60m,50.0,BUY,2,RISK_ON,1
+TICKER1.NS,2024-01-02 09:00:00+00:00,60m,50.0,BUY,1,RISK_ON,1
+TICKER2.L,2024-01-10 00:00:00+00:00,5d,50.0,BUY,2,RISK_ON,1

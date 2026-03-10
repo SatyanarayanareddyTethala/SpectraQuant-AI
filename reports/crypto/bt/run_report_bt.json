@@ -1,0 +1,13 @@
+{
+  "run_id": "bt",
+  "asset_class": "crypto",
+  "generated_at": "2026-03-10T04:31:13.040489+00:00",
+  "universe_size": 10,
+  "signals_ok": 10,
+  "signals_no_signal": 0,
+  "signals_error": 0,
+  "policy_passed": 10,
+  "policy_blocked": 0,
+  "active_positions": 10,
+  "total_weight": 0.542459
+}

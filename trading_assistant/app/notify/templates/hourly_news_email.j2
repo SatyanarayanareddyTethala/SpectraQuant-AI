@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+        .header { background: #17a2b8; color: white; padding: 20px; border-radius: 5px; }
+        .content { padding: 20px 0; }
+        .news-item { background: #f8f9fa; padding: 15px; margin: 15px 0; border-left: 4px solid #17a2b8; border-radius: 3px; }
+        .news-title { font-weight: bold; font-size: 1.1em; margin-bottom: 8px; color: #0066cc; }
+        .news-meta { font-size: 0.85em; color: #666; margin-bottom: 10px; }
+        .risk-badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 0.8em; font-weight: bold; margin-right: 5px; }
+        .risk-high { background: #dc3545; color: white; }
+        .risk-medium { background: #ffc107; color: #000; }
+        .risk-low { background: #28a745; color: white; }
+        .summary { margin-top: 10px; font-size: 0.9em; }
+        .summary-bullet { margin-left: 20px; }
+        .impact { background: #fff3cd; padding: 15px; margin: 20px 0; border-left: 4px solid #ffc107; }
+        .symbols { background: #e7f3ff; padding: 10px; margin: 10px 0; border-radius: 3px; }
+        .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 0.9em; color: #666; }
+        .stats { background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .stat-item { display: inline-block; margin-right: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📰 Hourly News Update</h1>
+            <p>{{ news.timestamp }}</p>
+        </div>
+        
+        <div class="content">
+            <div class="stats">
+                <div class="stat-item">
+                    <strong>New Articles:</strong> {{ news.article_count }}
+                </div>
+                <div class="stat-item">
+                    <strong>High Risk:</strong> {{ news.high_risk_count }}
+                </div>
+                <div class="stat-item">
+                    <strong>Affected Symbols:</strong> {{ news.affected_symbols|length }}
+                </div>
+            </div>
+            
+            {% if news.portfolio_impact %}
+            <div class="impact">
+                <h3>📊 Portfolio Impact Assessment</h3>
+                <p><strong>Active Plan Trades:</strong> {{ news.portfolio_impact.active_trades }}</p>
+                <p><strong>Affected Positions:</strong> {{ news.portfolio_impact.affected_positions }}</p>
+                {% if news.portfolio_impact.confidence_adjustments %}
+                <p><strong>Confidence Adjustments:</strong></p>
+                <ul>
+                    {% for adj in news.portfolio_impact.confidence_adjustments %}
+                    <li>{{ adj.symbol }}: {{ "%.1f%%"|format(adj.old_confidence * 100) }} → {{ "%.1f%%"|format(adj.new_confidence * 100) }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <h2>Latest News</h2>
+            
+            {% if news.articles %}
+                {% for article in news.articles %}
+                <div class="news-item">
+                    <div class="news-title">
+                        {{ article.title }}
+                    </div>
+                    
+                    <div class="news-meta">
+                        <span>{{ article.source }}</span> • 
+                        <span>{{ article.published_at }}</span>
+                        
+                        {% if article.risk_level %}
+                        <span class="risk-badge risk-{{ article.risk_level }}">
+                            {{ article.risk_level|upper }}
+                        </span>
+                        {% endif %}
+                        
+                        {% if article.risk_tags %}
+                        {% for tag in article.risk_tags %}
+                        <span style="font-style: italic; color: #666;">{{ tag }}</span>
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                    
+                    {% if article.symbols %}
+                    <div class="symbols">
+                        <strong>Related:</strong> {{ article.symbols|join(', ') }}
+                    </div>
+                    {% endif %}
+                    
+                    {% if article.summary %}
+                    <div class="summary">
+                        {{ article.summary|safe }}
+                    </div>
+                    {% endif %}
+                    
+                    {% if article.url %}
+                    <div style="margin-top: 10px;">
+                        <a href="{{ article.url }}" style="color: #0066cc;">Read more →</a>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+                <p>No new news articles in the last hour.</p>
+            {% endif %}
+            
+            {% if news.recommendations %}
+            <div class="impact">
+                <h3>💡 Recommendations</h3>
+                <ul>
+                    {% for rec in news.recommendations %}
+                    <li>{{ rec }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="footer">
+            <p>Next update in 1 hour</p>
+            <p>News sources: {{ news.sources|join(', ') if news.sources else 'Multiple' }}</p>
+            <p>⚠️ This is an automated summary. Verify critical information independently.</p>
+        </div>
+    </div>
+</body>
+</html>

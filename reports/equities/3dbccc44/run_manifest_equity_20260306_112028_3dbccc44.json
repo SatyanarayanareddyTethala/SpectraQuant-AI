@@ -1,0 +1,41 @@
+{
+  "run_id": "3dbccc44",
+  "asset_class": "equity",
+  "run_mode": "normal",
+  "started_at": "2026-03-06T11:20:28.129208+00:00",
+  "completed_at": "2026-03-06T11:20:28.129910+00:00",
+  "status": "success",
+  "stages": {
+    "universe": {
+      "status": "ok",
+      "included": 10,
+      "excluded": 0
+    },
+    "ingestion": {
+      "status": "ok"
+    },
+    "features": {
+      "status": "ok",
+      "symbols_with_features": 0
+    },
+    "signals": {
+      "status": "ok",
+      "ok": 0,
+      "no_signal": 10,
+      "error": 0
+    },
+    "meta_policy": {
+      "status": "ok",
+      "passed": 0,
+      "blocked": 10
+    },
+    "allocation": {
+      "status": "ok",
+      "active": 0
+    },
+    "reporting": {
+      "status": "ok"
+    }
+  },
+  "errors": []
+}

@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: trading_assistant_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trading_assistant
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trading_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading_assistant_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/trading_assistant
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - NEWSAPI_KEY=${NEWSAPI_KEY:-}
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./models:/app/models
+    ports:
+      - "8000:8000"  # FastAPI
+      - "8501:8501"  # Streamlit
+    networks:
+      - trading_network
+    command: >
+      sh -c "
+      echo 'Waiting for database...' &&
+      sleep 5 &&
+      alembic upgrade head &&
+      python -m app.main
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  trading_network:
+    driver: bridge

@@ -1,0 +1,99 @@
+# SpectraQuant Intelligence Layer - Configuration
+# Copy to config/intelligence.yaml and customize.
+# Secrets belong in .env — NEVER store API keys or passwords here.
+
+market:
+  timezone: "Asia/Kolkata"
+  open_time: "09:15:00"
+  close_time: "15:30:00"
+  premarket_plan_offset_minutes: 60
+  intraday_poll_seconds: 60
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "trading_assistant"
+  user_env: "DB_USERNAME"
+  password_env: "DB_PASSWORD"
+
+news:
+  providers:
+    - type: newsapi
+      api_key_env: "NEWSAPI_KEY"
+      enabled: true
+    - type: rss
+      urls:
+        - "https://economictimes.indiatimes.com/rssfeedstopstories.cms"
+      enabled: true
+  refresh_minutes: 60
+  risk_tags_thresholds:
+    high_risk: ["bankruptcy", "fraud", "lawsuit", "investigation"]
+    medium_risk: ["warning", "downgrade", "loss", "decline"]
+    catalyst: ["upgrade", "beat", "growth", "expansion"]
+
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  username_env: "SMTP_USERNAME"
+  password_env: "SMTP_PASSWORD"
+  from: "spectraquant@example.com"
+  to:
+    - "recipient@example.com"
+  subject_prefix: "[SpectraQuant]"
+
+risk:
+  equity_base: 1000000
+  alpha_risk_fraction: 0.02
+  b_max: 50000
+  max_daily_loss: 20000
+  max_gross_exposure: 500000
+  max_name_exposure: 100000
+  max_sector_exposure: 200000
+  turnover_cap: 0.5
+  adv_participation_cap: 0.1
+  mae_threshold: 0.03
+
+costs:
+  commission_per_trade: 20.0
+  slippage_model:
+    base_bps: 5
+    spread_weight: 0.5
+    vol_weight: 0.3
+    participation_weight: 0.2
+
+simulation:
+  enabled: true
+  data_provider: "yfinance"
+  mock_data_days: 252
+  seed: 42
+  execute_orders: false
+
+execution:
+  live_enabled: false
+
+learning:
+  window_months: 12
+  nightly_recalibrate: true
+  weekly_retrain_day: 6
+  drift:
+    psi_threshold: 0.25
+    ks_pvalue_threshold: 0.05
+    adwin_delta: 0.002
+  promotion_gates:
+    min_net_improvement: 0.02
+    max_drawdown_increase: 0.05
+    min_calibration_improvement: 0.01
+    max_turnover_increase: 0.1
+  rollback_rules:
+    underperform_days: 5
+    dd_breach: 0.1
+
+scheduler:
+  premarket_time: "08:15:00"
+  nightly_time: "18:00:00"
+  weekly_retrain_time: "02:00:00"
+
+logging:
+  level: "INFO"
+  file: "logs/intelligence.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

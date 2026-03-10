@@ -1,0 +1,123 @@
+{
+  "run_id": "c1cc9a49",
+  "as_of": "2026-03-06T13:44:05.775417+00:00",
+  "asset_class": "crypto",
+  "universe_mode": "static",
+  "included_count": 10,
+  "excluded_count": 0,
+  "included_symbols": [
+    "ADA",
+    "AVAX",
+    "BNB",
+    "BTC",
+    "DOGE",
+    "DOT",
+    "ETH",
+    "LINK",
+    "SOL",
+    "XRP"
+  ],
+  "excluded_symbols": [],
+  "entries": [
+    {
+      "canonical_symbol": "BTC",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "ETH",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "SOL",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "BNB",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "XRP",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "ADA",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "DOGE",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "AVAX",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "LINK",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    },
+    {
+      "canonical_symbol": "DOT",
+      "asset_class": "crypto",
+      "included": true,
+      "reason": "passed_all_gates",
+      "market_cap_usd": 0.0,
+      "volume_24h_usd": 0.0,
+      "age_days": 0,
+      "source": "static"
+    }
+  ]
+}
