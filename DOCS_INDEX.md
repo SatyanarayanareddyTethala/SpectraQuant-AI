@@ -7,7 +7,7 @@ Central map for all documentation after refactor.
 - [docs/howto/INSTALLATION.md](docs/howto/INSTALLATION.md)
 - [docs/howto/QUICK_REFERENCE.md](docs/howto/QUICK_REFERENCE.md)
 - [docs/howto/universe.md](docs/howto/universe.md)
-- [docs/howto/README_INTELLIGENCE.md](docs/howto/README_INTELLIGENCE.md)
+- [docs/howto/README_INTELLIGENCE.md](docs/howto/README_INTELLIGENCE.md) ⚠️ *(archived — describes the inactive `trading_assistant/` application)*
 
 ## Design and architecture
 - [docs/design/ARCHITECTURE_REVIEW.md](docs/design/ARCHITECTURE_REVIEW.md) — Principal architecture review: V2 vs V3, execution flows, contract boundaries, duplication map, staged refactor plan
@@ -26,6 +26,9 @@ Central map for all documentation after refactor.
 - [docs/implementation/IMPLEMENTATION_SUMMARY_INTELLIGENCE.md](docs/implementation/IMPLEMENTATION_SUMMARY_INTELLIGENCE.md)
 - [docs/implementation/DELIVERY_VERIFICATION.md](docs/implementation/DELIVERY_VERIFICATION.md)
 
+## Archive index
+- [archive/ARCHIVE_INDEX.md](archive/ARCHIVE_INDEX.md) — Classification of all archived material
+
 ## Project references (still at repo root)
 - [README.md](README.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
@@ -38,5 +41,6 @@ Central map for all documentation after refactor.
 - Use [docs/howto/QUICK_REFERENCE.md](docs/howto/QUICK_REFERENCE.md) during day-to-day runs.
 - Architecture deep dive: [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md) and [docs/design/SYSTEM_DESIGN.md](docs/design/SYSTEM_DESIGN.md).
 - Implementation history and deliverables: [docs/implementation/*](docs/implementation).
+- Archive: [archive/ARCHIVE_INDEX.md](archive/ARCHIVE_INDEX.md) for classification of non-active directories.
 
 > If you notice a missing or broken link, please open an issue or PR.

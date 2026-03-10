@@ -1,3 +1,11 @@
+> **⚠️ ARCHIVED DOCUMENT**
+> This document describes the `trading_assistant/` standalone application which is
+> **not actively maintained**.  The directory `trading_assistant/` is labelled archived
+> in place (see `trading_assistant/ARCHIVED.md`).
+> For active V3 execution capabilities see `src/spectraquant_v3/execution/`.
+
+---
+
 # SpectraQuant Intelligence Layer
 
 I've successfully built a production-grade AI-driven daily trading assistant that meets all the hard requirements from your specification. Here's what has been delivered:

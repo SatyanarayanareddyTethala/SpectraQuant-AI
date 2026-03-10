@@ -1,3 +1,9 @@
+> **⚠️ ARCHIVED — This directory is not actively developed or maintained.**
+> See [`ARCHIVED.md`](ARCHIVED.md) for details.
+> Active V3 platform: `src/spectraquant_v3/`
+
+---
+
 # SpectraQuant Trading Assistant
 
 I've successfully built a production-grade AI-driven daily trading assistant that meets all the hard requirements from your specification. Here's what has been delivered:
