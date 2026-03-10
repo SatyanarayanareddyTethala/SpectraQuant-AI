@@ -219,6 +219,50 @@ def validate_config(cfg: dict[str, Any]) -> None:
         raise ConfigValidationError("config['qa'] must be a mapping.")
 
 
+def validate_equity_config(cfg: dict[str, Any]) -> None:
+    """Assert that *cfg* contains the ``equities`` section required by equity pipelines.
+
+    Call this at the top of :func:`~spectraquant_v3.pipeline.equity_pipeline.run_equity_pipeline`
+    so that a config built from the wrong YAML file fails fast with an actionable
+    error instead of running the full universe stage with an empty ticker list.
+
+    Args:
+        cfg: Merged configuration dictionary.
+
+    Raises:
+        ConfigValidationError: If the ``equities`` key is absent.
+    """
+    from spectraquant_v3.core.errors import ConfigValidationError
+
+    if "equities" not in cfg:
+        raise ConfigValidationError(
+            "Equity pipeline config is missing required 'equities' section. "
+            "Use get_equity_config() or include an 'equities' key in your config dict."
+        )
+
+
+def validate_crypto_config(cfg: dict[str, Any]) -> None:
+    """Assert that *cfg* contains the ``crypto`` section required by crypto pipelines.
+
+    Call this at the top of :func:`~spectraquant_v3.pipeline.crypto_pipeline.run_crypto_pipeline`
+    so that a config built from the wrong YAML file fails fast with an actionable
+    error instead of running the full universe stage with an empty symbol list.
+
+    Args:
+        cfg: Merged configuration dictionary.
+
+    Raises:
+        ConfigValidationError: If the ``crypto`` key is absent.
+    """
+    from spectraquant_v3.core.errors import ConfigValidationError
+
+    if "crypto" not in cfg:
+        raise ConfigValidationError(
+            "Crypto pipeline config is missing required 'crypto' section. "
+            "Use get_crypto_config() or include a 'crypto' key in your config dict."
+        )
+
+
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge *overlay* into a copy of *base*."""
     result = dict(base)

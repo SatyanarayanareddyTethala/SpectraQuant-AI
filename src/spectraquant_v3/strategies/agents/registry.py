@@ -87,6 +87,36 @@ class AgentRegistry:
         agent_cls = cls.get(name)
         return agent_cls(**kwargs)
 
+    @classmethod
+    def build_from_config(
+        cls,
+        name: str,
+        cfg: dict[str, Any],
+        run_id: str = "unknown",
+    ) -> Any:
+        """Instantiate the agent for *name* using ``from_config`` when available.
+
+        If the agent class exposes a ``from_config(cfg, run_id=...)`` factory
+        class-method it is preferred over the bare constructor so that agents
+        can apply their own config extraction logic.  Falls back to
+        ``agent_cls(run_id=run_id)`` for agents without ``from_config``.
+
+        This helper centralises the ``hasattr(cls, "from_config")`` pattern
+        that would otherwise be copy-pasted across pipeline and backtest code.
+
+        Args:
+            name:   Registered agent name.
+            cfg:    Merged pipeline configuration dict.
+            run_id: Run identifier forwarded to the agent constructor.
+
+        Returns:
+            An agent instance.
+        """
+        agent_cls = cls.get(name)
+        if hasattr(agent_cls, "from_config"):
+            return agent_cls.from_config(cfg, run_id=run_id)
+        return agent_cls(run_id=run_id)
+
 
 # ---------------------------------------------------------------------------
 # Built-in agent registrations

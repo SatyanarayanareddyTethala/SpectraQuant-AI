@@ -128,7 +128,15 @@ class BacktestEngine:
         self._strategy_id = strategy_id
         if strategy_id:
             from spectraquant_v3.strategies.loader import StrategyLoader  # noqa: PLC0415
+            from spectraquant_v3.core.errors import MixedAssetClassRunError  # noqa: PLC0415
 
+            defn = StrategyLoader.load(strategy_id)
+            if defn.asset_class != asset_class:
+                raise MixedAssetClassRunError(
+                    f"BacktestEngine: strategy '{strategy_id}' is a "
+                    f"{defn.asset_class!r} strategy but asset_class={asset_class!r} "
+                    "was passed. Backtest asset_class must match strategy asset_class."
+                )
             self._cfg = StrategyLoader.build_pipeline_config(strategy_id, cfg)
         else:
             self._cfg = cfg
@@ -545,15 +553,23 @@ class BacktestEngine:
                 from spectraquant_v3.strategies.agents.registry import AgentRegistry  # noqa: PLC0415
 
                 defn = StrategyLoader.load(self._strategy_id)
-                agent_cls = AgentRegistry.get(defn.agents[0])
-                if hasattr(agent_cls, "from_config"):
-                    return agent_cls.from_config(self._cfg, run_id=self._run_id)
-                return agent_cls(run_id=self._run_id)
+                return AgentRegistry.build_from_config(
+                    defn.agents[0], self._cfg, run_id=self._run_id
+                )
 
             from spectraquant_v3.crypto.signals.momentum import CryptoMomentumAgent  # noqa: PLC0415
 
             return CryptoMomentumAgent.from_config(self._cfg, run_id=self._run_id)
         else:
+            if self._strategy_id:
+                from spectraquant_v3.strategies.loader import StrategyLoader  # noqa: PLC0415
+                from spectraquant_v3.strategies.agents.registry import AgentRegistry  # noqa: PLC0415
+
+                defn = StrategyLoader.load(self._strategy_id)
+                return AgentRegistry.build_from_config(
+                    defn.agents[0], self._cfg, run_id=self._run_id
+                )
+
             from spectraquant_v3.equities.signals.momentum import EquityMomentumAgent  # noqa: PLC0415
 
             return EquityMomentumAgent.from_config(self._cfg, run_id=self._run_id)
