@@ -10,6 +10,7 @@ Central map for all documentation after refactor.
 - [docs/howto/README_INTELLIGENCE.md](docs/howto/README_INTELLIGENCE.md)
 
 ## Design and architecture
+- [docs/design/ARCHITECTURE_REVIEW.md](docs/design/ARCHITECTURE_REVIEW.md) — Principal architecture review: V2 vs V3, execution flows, contract boundaries, duplication map, staged refactor plan
 - [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md)
 - [docs/design/SYSTEM_DESIGN.md](docs/design/SYSTEM_DESIGN.md)
 - [docs/design/ROADMAP_v2.md](docs/design/ROADMAP_v2.md)
