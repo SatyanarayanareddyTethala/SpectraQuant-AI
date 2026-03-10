@@ -1,0 +1,41 @@
+{
+  "run_id": "c99430e4",
+  "asset_class": "crypto",
+  "run_mode": "normal",
+  "started_at": "2026-03-10T17:08:09.261713+00:00",
+  "completed_at": "2026-03-10T17:08:09.262422+00:00",
+  "status": "success",
+  "stages": {
+    "universe": {
+      "status": "ok",
+      "included": 10,
+      "excluded": 0
+    },
+    "ingestion": {
+      "status": "ok"
+    },
+    "features": {
+      "status": "ok",
+      "symbols_with_features": 1
+    },
+    "signals": {
+      "status": "ok",
+      "ok": 1,
+      "no_signal": 0,
+      "error": 0
+    },
+    "meta_policy": {
+      "status": "ok",
+      "passed": 1,
+      "blocked": 0
+    },
+    "allocation": {
+      "status": "ok",
+      "active": 1
+    },
+    "reporting": {
+      "status": "ok"
+    }
+  },
+  "errors": []
+}

@@ -299,8 +299,13 @@ class BacktestEngine:
             blocked_reasons=blocked_reasons,
             no_signal_reasons=no_signal_reasons,
             selected_symbols=sorted(weight_map.keys()),
-            composite_scores={d.canonical_symbol: float(d.composite_score) for d in decisions},
-        )
+            composite_scores = {
+                 str(getattr(d, "canonical_symbol")): float(getattr(d, "composite_score"))
+                 for d in decisions
+                 if getattr(d, "canonical_symbol", None) is not None
+                  and getattr(d, "composite_score", None) is not None 
+               }  
+      )
 
 
     def _allocate_for_decisions(self, decisions, vol_map: dict[str, float]):

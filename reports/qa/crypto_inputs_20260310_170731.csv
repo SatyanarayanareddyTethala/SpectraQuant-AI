@@ -1,0 +1,4 @@
+symbol,has_ohlcv,has_volume,has_onchain,has_funding,has_oi
+BTC,True,True,True,False,False
+ETH,True,True,True,False,False
+SOL,True,True,True,False,False
