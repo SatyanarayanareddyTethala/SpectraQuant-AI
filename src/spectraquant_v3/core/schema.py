@@ -6,10 +6,18 @@ every pipeline stage produces strongly-typed, validated output.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from spectraquant_v3.core.enums import AssetClass, SignalStatus
+from spectraquant_v3.core.enums import AssetClass, NoSignalReason, SignalStatus  # noqa: F401
+
+_schema_logger = logging.getLogger(__name__)
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    """Return *value* clamped to the closed interval [*lo*, *hi*]."""
+    return max(lo, min(hi, value))
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +94,19 @@ class SignalRow:
 
     Agents must emit a :class:`SignalRow` for every symbol they are asked
     to evaluate, even when data is unavailable (status=NO_SIGNAL).
+
+    Required fields (must be non-empty strings):
+        run_id, timestamp, canonical_symbol, asset_class, agent_id, horizon
+
+    Optional fields (safe defaults provided):
+        signal_score   – clamped to ``[-1.0, +1.0]`` on construction.
+        confidence     – clamped to ``[0.0,  1.0]`` on construction.
+        no_signal_reason – machine-readable reason key; use
+                           :class:`~spectraquant_v3.core.enums.NoSignalReason`
+                           values where possible.
+        rationale      – free-text human-readable explanation.
+        error_reason   – populated when status=ERROR.
+        required_inputs / available_inputs – for QA audit only.
     """
 
     run_id: str
@@ -94,13 +115,41 @@ class SignalRow:
     asset_class: str
     agent_id: str
     horizon: str
-    signal_score: float = 0.0       # range -1.0 to +1.0
-    confidence: float = 0.0         # range  0.0 to  1.0
+    signal_score: float = 0.0       # range -1.0 to +1.0; clamped at construction
+    confidence: float = 0.0         # range  0.0 to  1.0; clamped at construction
     required_inputs: list[str] = field(default_factory=list)
     available_inputs: list[str] = field(default_factory=list)
     rationale: str = ""
+    no_signal_reason: str = ""      # use NoSignalReason values where possible
     status: str = SignalStatus.NO_SIGNAL.value
     error_reason: str = ""
+
+    def __post_init__(self) -> None:
+        """Clamp signal_score and confidence to their documented ranges.
+
+        Out-of-range values are clamped (not rejected) so that execution
+        paths remain robust to minor floating-point overflows.  A warning
+        is logged so that misbehaving agents can be identified and fixed.
+        """
+        if self.signal_score < -1.0 or self.signal_score > 1.0:
+            _schema_logger.warning(
+                "SignalRow: signal_score=%.6f for symbol=%r agent=%r is outside [-1.0, +1.0]; "
+                "clamping to range.",
+                self.signal_score,
+                self.canonical_symbol,
+                self.agent_id,
+            )
+            self.signal_score = _clamp(self.signal_score, -1.0, 1.0)
+
+        if self.confidence < 0.0 or self.confidence > 1.0:
+            _schema_logger.warning(
+                "SignalRow: confidence=%.6f for symbol=%r agent=%r is outside [0.0, 1.0]; "
+                "clamping to range.",
+                self.confidence,
+                self.canonical_symbol,
+                self.agent_id,
+            )
+            self.confidence = _clamp(self.confidence, 0.0, 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +159,19 @@ class SignalRow:
 
 @dataclass
 class AllocationRow:
-    """Target portfolio weight for a single symbol after allocation."""
+    """Target portfolio weight for a single symbol after allocation.
+
+    Required fields:
+        run_id, canonical_symbol, asset_class
+
+    Optional fields (safe defaults provided):
+        target_weight     – decimal weight; positive = long, negative = short.
+        blocked           – True when this symbol was excluded by a policy rule.
+        blocked_reason    – human-readable reason for the block.
+        expected_turnover – estimated one-way turnover for this position change.
+        timestamp         – ISO-8601 UTC string recording when the allocation
+                            was computed; leave empty when unavailable.
+    """
 
     run_id: str
     canonical_symbol: str
@@ -119,6 +180,7 @@ class AllocationRow:
     blocked: bool = False
     blocked_reason: str = ""
     expected_turnover: float = 0.0
+    timestamp: str = ""
 
 
 # ---------------------------------------------------------------------------

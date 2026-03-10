@@ -41,11 +41,53 @@ class RunStage(str, Enum):
 
 
 class SignalStatus(str, Enum):
-    """Outcome of a single signal-agent evaluation."""
+    """Outcome of a single signal-agent evaluation.
+
+    OK          – Signal computed successfully; score and confidence are valid.
+    NO_SIGNAL   – Agent ran but found no actionable signal (data present but
+                  below threshold, or symbol not selected by a cross-sectional
+                  filter).
+    DEGRADED    – Agent produced a signal but with partial or lower-quality
+                  data (e.g. fewer rows than ideal, missing one of several
+                  input features).  Downstream consumers should treat this
+                  with reduced confidence.
+    ERROR       – Agent encountered an unrecoverable error; score and
+                  confidence are always 0.0; ``error_reason`` is populated.
+    """
 
     OK = "OK"
     NO_SIGNAL = "NO_SIGNAL"
+    DEGRADED = "DEGRADED"
     ERROR = "ERROR"
+
+
+class NoSignalReason(str, Enum):
+    """Machine-readable reason why a signal agent returned NO_SIGNAL or DEGRADED.
+
+    Stored in :attr:`~spectraquant_v3.core.schema.SignalRow.no_signal_reason`.
+    Using controlled vocabulary here makes it possible to bucket diagnostics
+    reliably in the backtest engine and reporter.
+
+    These reasons are valid for both ``NO_SIGNAL`` (no actionable signal could
+    be produced) and ``DEGRADED`` (a signal was produced but with reduced
+    reliability due to data limitations).
+    """
+
+    MISSING_INPUTS = "missing_inputs"
+    """Required input columns or data sources were absent."""
+
+    INSUFFICIENT_ROWS = "insufficient_rows"
+    """Not enough historical rows to compute the signal.
+    Also the typical reason for a DEGRADED status when partial data is available."""
+
+    TOP_N_CUTOFF = "top_n_cutoff"
+    """Symbol was ranked but fell outside the top-N selection window."""
+
+    BELOW_THRESHOLD = "below_threshold"
+    """Computed score or confidence was below the configured minimum."""
+
+    UNKNOWN = "unknown"
+    """Catch-all for cases not covered by the above categories."""
 
 
 class RunStatus(str, Enum):
