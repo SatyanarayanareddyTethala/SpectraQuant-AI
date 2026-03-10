@@ -15,6 +15,7 @@ import pandas as pd
 from spectraquant_v3.core.enums import AssetClass, RunMode, RunStage, RunStatus
 from spectraquant_v3.core.context import RunContext
 from spectraquant_v3.core.schema import QARow
+from spectraquant_v3.core.config import validate_config, validate_equity_config
 from spectraquant_v3.equities.features.engine import EquityFeatureEngine
 from spectraquant_v3.equities.symbols.registry import build_registry_from_config
 from spectraquant_v3.equities.universe.builder import EquityUniverseBuilder
@@ -53,6 +54,9 @@ def run_equity_pipeline(
         Dict with keys: ``run_id``, ``status``, ``universe``, ``signals``,
         ``allocations``, ``artefact_paths``.
     """
+    validate_config(cfg)
+    validate_equity_config(cfg)
+
     with RunContext.create(
         asset_class=AssetClass.EQUITY,
         run_mode=run_mode,
@@ -141,11 +145,9 @@ def run_equity_pipeline(
         if agents:
             primary_agent = str(agents[0])
 
-        agent_cls = AgentRegistry.get(primary_agent)
-        if hasattr(agent_cls, "from_config"):
-            signal_agent = agent_cls.from_config(cfg, run_id=ctx.run_id)
-        else:
-            signal_agent = agent_cls(run_id=ctx.run_id)
+        signal_agent = AgentRegistry.build_from_config(
+            primary_agent, cfg, run_id=ctx.run_id
+        )
 
         if feature_map:
             signals = run_signal_agent(signal_agent, feature_map, as_of=as_of)

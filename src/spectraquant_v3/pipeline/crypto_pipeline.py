@@ -19,6 +19,7 @@ import pandas as pd
 from spectraquant_v3.core.enums import AssetClass, RunMode, RunStage, RunStatus
 from spectraquant_v3.core.context import RunContext
 from spectraquant_v3.core.schema import QARow
+from spectraquant_v3.core.config import validate_config, validate_crypto_config
 from spectraquant_v3.crypto.features.engine import CryptoFeatureEngine
 from spectraquant_v3.strategies.agents.registry import AgentRegistry
 from spectraquant_v3.crypto.symbols.registry import build_registry_from_config
@@ -61,6 +62,9 @@ def run_crypto_pipeline(
         Dict with keys: ``run_id``, ``status``, ``universe``, ``signals``,
         ``allocations``, ``artefact_paths``.
     """
+    validate_config(cfg)
+    validate_crypto_config(cfg)
+
     with RunContext.create(
         asset_class=AssetClass.CRYPTO,
         run_mode=run_mode,
@@ -149,11 +153,9 @@ def run_crypto_pipeline(
         if agents:
             primary_agent = str(agents[0])
 
-        agent_cls = AgentRegistry.get(primary_agent)
-        if hasattr(agent_cls, "from_config"):
-            signal_agent = agent_cls.from_config(cfg, run_id=ctx.run_id)
-        else:
-            signal_agent = agent_cls(run_id=ctx.run_id)
+        signal_agent = AgentRegistry.build_from_config(
+            primary_agent, cfg, run_id=ctx.run_id
+        )
 
         if feature_map:
             signals = run_signal_agent(signal_agent, feature_map, as_of=as_of)

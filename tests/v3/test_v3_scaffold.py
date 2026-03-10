@@ -459,8 +459,35 @@ def test_crypto_pipeline_stub_raises_and_writes_manifest(tmp_path: Path) -> None
     from spectraquant_v3.core.errors import EmptyUniverseError
     from spectraquant_v3.pipeline.crypto_pipeline import run_crypto_pipeline
 
-    # Empty config → zero symbols → EmptyUniverseError, manifest still written
-    cfg = {"crypto": {"symbols": [], "reports_dir": str(tmp_path)}}
+    # A structurally valid config with zero symbols → EmptyUniverseError from
+    # the universe builder stage.  All required base keys must be present so
+    # the pipeline config guards pass before reaching the universe stage.
+    cfg = {
+        "run": {"mode": "normal"},
+        "cache": {"root": "data/cache"},
+        "qa": {"min_ohlcv_coverage": 1.0},
+        "execution": {"mode": "paper"},
+        "portfolio": {
+            "max_weight": 0.25,
+            "max_gross_leverage": 1.0,
+            "min_confidence": 0.10,
+            "min_signal_threshold": 0.05,
+            "allocator": "equal_weight",
+        },
+        "crypto": {
+            "symbols": [],
+            "primary_ohlcv_provider": "ccxt",
+            "universe_mode": "static",
+            "quality_gate": {
+                "min_market_cap_usd": 0,
+                "min_24h_volume_usd": 0,
+                "min_age_days": 0,
+                "require_tradable_mapping": True,
+            },
+            "signals": {"momentum_lookback": 20},
+            "reports_dir": str(tmp_path),
+        },
+    }
     with pytest.raises(EmptyUniverseError):
         run_crypto_pipeline(cfg, run_mode=RunMode.NORMAL, project_root=tmp_path)
 
@@ -477,11 +504,32 @@ def test_equity_pipeline_stub_raises_and_writes_manifest(tmp_path: Path) -> None
     from spectraquant_v3.core.errors import EmptyUniverseError
     from spectraquant_v3.pipeline.equity_pipeline import run_equity_pipeline
 
+    # A structurally valid config with zero tickers → EmptyUniverseError from
+    # the universe builder stage.  All required base keys must be present so
+    # the pipeline config guards pass before reaching the universe stage.
     cfg = {
+        "run": {"mode": "normal"},
+        "cache": {"root": "data/cache"},
+        "qa": {"min_ohlcv_coverage": 1.0},
+        "execution": {"mode": "paper"},
+        "portfolio": {
+            "max_weight": 0.20,
+            "max_gross_leverage": 1.0,
+            "min_confidence": 0.10,
+            "min_signal_threshold": 0.05,
+            "allocator": "equal_weight",
+        },
         "equities": {
+            "primary_ohlcv_provider": "yfinance",
             "universe": {"tickers": [], "exclude": []},
+            "quality_gate": {
+                "min_price": 0,
+                "min_avg_volume": 0,
+                "min_history_days": 0,
+            },
+            "signals": {"momentum_lookback": 20},
             "reports_dir": str(tmp_path),
-        }
+        },
     }
     with pytest.raises(EmptyUniverseError):
         run_equity_pipeline(cfg, run_mode=RunMode.NORMAL, project_root=tmp_path)
