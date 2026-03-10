@@ -109,8 +109,7 @@ spectraquant retrain         # Trigger retraining
 ```
 SpectraQuant-AI/
 ├── requirements.txt         # Core dependencies
-├── trading_assistant/
-│   └── requirements.txt    # Intelligence Layer deps
+├── trading_assistant/       # ⚠️ ARCHIVED — not active; see trading_assistant/ARCHIVED.md
 ├── config.yaml             # Main configuration
 ├── .env                    # Environment variables (create from .env.example)
 ├── data/

@@ -235,8 +235,8 @@ python -m pip install --upgrade pip setuptools wheel
 # 4. Install core dependencies
 pip install -r requirements.txt
 
-# 5. Install intelligence layer dependencies
-pip install -r trading_assistant/requirements.txt
+# 5. Install intelligence layer dependencies (ARCHIVED — skip for active use)
+# pip install -r trading_assistant/requirements.txt
 
 # 6. Install package
 pip install -e .
@@ -316,24 +316,15 @@ This installs:
 
 **Installation time:** 5-15 minutes depending on your internet speed and system.
 
-### Step 5: Install Intelligence Layer Dependencies (Optional)
+### Step 5: Install Intelligence Layer Dependencies (Archived — Skip)
 
-If you plan to use the Intelligence Layer (automated trading assistant):
+> ⚠️ **The `trading_assistant/` application is archived and not actively maintained.**
+> Skip this step for active V3 or V2 use.  See `trading_assistant/ARCHIVED.md`.
 
 ```bash
-pip install -r trading_assistant/requirements.txt
+# ARCHIVED — do not run for active platform setup
+# pip install -r trading_assistant/requirements.txt
 ```
-
-This adds:
-- `SQLAlchemy>=2.0.0` - Database ORM
-- `alembic` - Database migrations
-- `psycopg2-binary` - PostgreSQL adapter
-- `fastapi` - Web API framework
-- `uvicorn` - ASGI server
-- `APScheduler` - Job scheduling
-- `sentence-transformers` - Text embeddings
-- `xgboost` - Additional ML algorithms
-- And more (see `trading_assistant/requirements.txt` for full list)
 
 ### Step 6: Install SpectraQuant Package
 
@@ -387,7 +378,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r trading_assistant/requirements.txt  # Optional
+# pip install -r trading_assistant/requirements.txt  # ARCHIVED — skip
 
 # Install package
 pip install -e .
@@ -420,7 +411,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r trading_assistant/requirements.txt  # Optional
+# pip install -r trading_assistant/requirements.txt  # ARCHIVED — skip
 
 # Install package
 pip install -e .
@@ -459,7 +450,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r trading_assistant/requirements.txt  # Optional
+# pip install -r trading_assistant/requirements.txt  # ARCHIVED — skip
 
 # Install package
 pip install -e .
@@ -501,7 +492,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # 7. Install dependencies
 pip install -r requirements.txt
-pip install -r trading_assistant\requirements.txt  # Optional
+pip install -r trading_assistant\requirements.txt  # ARCHIVED — skip
 
 # 8. Install package
 pip install -e .
@@ -526,13 +517,18 @@ wsl --install
 
 ## Optional Components
 
-### Intelligence Layer Setup
+### Intelligence Layer Setup (Archived)
+
+> ⚠️ **The `trading_assistant/` standalone application is archived and not actively maintained.**
+> The steps below are preserved for historical reference only.
+> See `trading_assistant/ARCHIVED.md` for details.
 
 For the automated trading assistant with scheduled workflows:
 
 1. **Install dependencies** (if not done already):
    ```bash
-   pip install -r trading_assistant/requirements.txt
+   # ARCHIVED — do not run for active platform setup
+   # pip install -r trading_assistant/requirements.txt
    ```
 
 2. **Setup database:**

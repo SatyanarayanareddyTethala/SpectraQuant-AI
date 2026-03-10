@@ -150,7 +150,11 @@ Runs complete pipeline: download → train → predict → signals → portfolio
 
 **Size:** ~2-3 GB
 
-### Intelligence Layer (Optional)
+### Intelligence Layer (Optional, Archived)
+
+> ⚠️ **The `trading_assistant/` directory is archived and not actively maintained.**
+> See `trading_assistant/ARCHIVED.md`.  The packages listed below are for historical
+> reference only; do not install them as part of an active V3 setup.
 
 **Python Packages** (from `trading_assistant/requirements.txt`):
 - `SQLAlchemy`, `alembic` - Database
@@ -241,7 +245,10 @@ pip install -e .
    pytest -v
    ```
 
-### Setup Intelligence Layer (Optional)
+### Setup Intelligence Layer (Optional, Archived)
+
+> ⚠️ **The `trading_assistant/` standalone application is archived.**
+> The steps below are preserved for historical reference only.
 
 For automated trading workflows:
 
