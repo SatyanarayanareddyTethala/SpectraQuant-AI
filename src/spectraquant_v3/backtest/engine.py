@@ -18,12 +18,14 @@ For each rebalance step the engine:
 
 1. Slices each symbol's OHLCV DataFrame to the in-sample window.
 2. Computes features (via the supplied feature engine).
-3. Runs the signal agent(s) on the latest available row.
-4. Applies the meta-policy filter.
-5. Runs the allocator to obtain target weights.
-6. Computes the step's portfolio return by applying weights to the *next*
+3. Injects any pre-computed news sentiment scores (when ``news_feature_map``
+   is provided) into the feature DataFrames so hybrid agents can use them.
+4. Runs the signal agent(s) on the latest available row.
+5. Applies the meta-policy filter.
+6. Runs the allocator to obtain target weights.
+7. Computes the step's portfolio return by applying weights to the *next*
    period's actual returns (``close[t+1] / close[t] - 1``).
-7. Accumulates the NAV and records a :class:`RebalanceSnapshot`.
+8. Accumulates the NAV and records a :class:`RebalanceSnapshot`.
 
 After all steps the engine computes aggregate performance metrics and
 returns a :class:`~spectraquant_v3.backtest.results.BacktestResults`.
@@ -92,6 +94,21 @@ class BacktestEngine:
         slippage:              Slippage cost in basis points (bps).
         spread:                Spread cost in basis points (bps).
         run_id:                Identifier for this backtest run.
+        news_feature_map:      Optional pre-computed news sentiment scores
+                               used to augment hybrid backtests.  Structure::
+
+                                   {symbol: {date_str: sentiment_score}}
+
+                               where *date_str* is a ``"YYYY-MM-DD"`` string
+                               (full ISO-8601 timestamps are also accepted;
+                               only the date portion is used for lookup).
+                               When a score is found for a symbol at the
+                               current rebalance date it is written as
+                               ``news_sentiment_score`` into that symbol's
+                               feature DataFrame before signal evaluation.
+                               When absent the hybrid agent falls back to pure
+                               momentum automatically – no other behaviour
+                               changes.
     """
 
     def __init__(
@@ -108,6 +125,7 @@ class BacktestEngine:
         slippage: float = 0.0,
         spread: float = 0.0,
         run_id: str = "backtest",
+        news_feature_map: dict[str, dict[str, float]] | None = None,
     ) -> None:
         if not price_data:
             raise EmptyPriceDataError(
@@ -150,6 +168,9 @@ class BacktestEngine:
         self._slippage_bps = float(slippage)
         self._spread_bps = float(spread)
         self._run_id = run_id
+        self._news_feature_map: dict[str, dict[str, float]] | None = (
+            news_feature_map if news_feature_map else None
+        )
 
         # Cost model uses the same execution simulator semantics as paper mode.
         # We encode commission/slippage/spread (all in bps) as an aggregate
@@ -246,6 +267,12 @@ class BacktestEngine:
 
         if not feature_map:
             return None
+
+        # Inject pre-computed news sentiment scores when provided.
+        # This enables hybrid strategies to receive news_sentiment_score during
+        # walk-forward steps without requiring it to be part of the OHLCV data.
+        if self._news_feature_map:
+            self._inject_news_features(feature_map, date)
 
         # Generate signals
         signals = run_signal_agent(self._signal_agent, feature_map, as_of=as_of_str)
@@ -355,6 +382,43 @@ class BacktestEngine:
     # ------------------------------------------------------------------
     # Internal – helpers
     # ------------------------------------------------------------------
+
+    def _inject_news_features(
+        self,
+        feature_map: dict[str, pd.DataFrame],
+        date: pd.Timestamp,
+    ) -> None:
+        """Inject pre-computed news sentiment scores into feature DataFrames.
+
+        For each symbol in *feature_map*, looks up the news sentiment score
+        for *date* in ``self._news_feature_map`` and assigns it to the last
+        row of the symbol's feature DataFrame as ``news_sentiment_score``.
+
+        Lookup is first attempted with a ``"YYYY-MM-DD"`` key, then with the
+        full ISO-8601 string returned by ``date.isoformat()``.  If no match
+        is found for a symbol / date the DataFrame is left unchanged so the
+        hybrid agent falls back to pure momentum automatically.
+
+        Only operates when ``self._news_feature_map`` is non-empty.
+        """
+        if not self._news_feature_map:
+            return
+
+        date_key = date.strftime("%Y-%m-%d")
+        iso_key = date.isoformat()
+
+        for sym, df in feature_map.items():
+            sym_news = self._news_feature_map.get(sym)
+            if not sym_news:
+                continue
+
+            score = sym_news.get(date_key)
+            if score is None:
+                score = sym_news.get(iso_key)
+            if score is None:
+                continue
+
+            df.loc[df.index[-1], "news_sentiment_score"] = float(score)
 
     def _rebalance_dates(self) -> list[pd.Timestamp]:
         """Compute rebalance dates that fall within the price data range."""
