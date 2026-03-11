@@ -121,12 +121,22 @@ class StrategyLoader:
         the returned config dict, overriding any values that were present in
         *base_cfg*.
 
+        Four private keys are also injected so that pipelines can consume
+        strategy metadata without re-querying the registry:
+
+        - ``_strategy_id``    – the resolved strategy identifier.
+        - ``_asset_class``    – ``"crypto"`` or ``"equity"``.
+        - ``_agents``         – list of validated agent names from the registry.
+        - ``_rebalance_freq`` – pandas offset alias for rebalance cadence.
+
         Args:
             strategy_id: Strategy to load.
             base_cfg:    Existing merged pipeline config (not modified in-place).
 
         Returns:
-            A new config dict with the strategy's risk limits applied.
+            A new config dict with the strategy's risk limits applied and
+            ``_strategy_id``, ``_asset_class``, ``_agents``, and
+            ``_rebalance_freq`` injected.
         """
         defn = cls.load(strategy_id)
         cfg = dict(base_cfg)
@@ -142,12 +152,17 @@ class StrategyLoader:
         # Write allocator mode so AllocatorConfig.from_config picks it up.
         # Strategy allocators that are volatility-targeted map to pipeline mode
         # "vol_target" for backwards-compatible pipeline execution.
-        if defn.allocator in {"vol_target_v1", "rank_vol_target_allocator"}:
-            portfolio["allocator"] = "vol_target"
-        else:
-            portfolio["allocator"] = defn.allocator
+        # "equal_weight_v1" is treated as an alias for "equal_weight".
+        _ALLOCATOR_MODE_MAP: dict[str, str] = {
+            "vol_target_v1": "vol_target",
+            "rank_vol_target_allocator": "vol_target",
+            "equal_weight_v1": "equal_weight",
+        }
+        portfolio["allocator"] = _ALLOCATOR_MODE_MAP.get(defn.allocator, defn.allocator)
 
         cfg["portfolio"] = portfolio
         cfg["_strategy_id"] = defn.strategy_id
+        cfg["_asset_class"] = defn.asset_class
+        cfg["_agents"] = list(defn.agents)
         cfg["_rebalance_freq"] = defn.rebalance_freq
         return cfg

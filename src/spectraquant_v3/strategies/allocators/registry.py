@@ -89,6 +89,8 @@ def _register_builtins() -> None:
     # modes via its AllocatorConfig.mode field.  We register the same
     # class under two canonical names for ergonomic strategy definitions.
     AllocatorRegistry.register("equal_weight", Allocator)
+    # "equal_weight_v1" is a legacy alias for "equal_weight".
+    AllocatorRegistry.register("equal_weight_v1", Allocator)
     AllocatorRegistry.register("vol_target_v1", Allocator)
     AllocatorRegistry.register("rank_vol_target_allocator", RankVolTargetAllocator)
 

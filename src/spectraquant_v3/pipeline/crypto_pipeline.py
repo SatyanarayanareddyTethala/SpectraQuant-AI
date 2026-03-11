@@ -148,7 +148,13 @@ def run_crypto_pipeline(
         # ------------------------------------------------------------------
         strategy_id = str(cfg.get("_strategy_id", "crypto_momentum_v1"))
         primary_agent = strategy_id
-        agents = cfg.get("strategies", {}).get(strategy_id, {}).get("agents", [])
+        # Prefer _agents injected by StrategyLoader.build_pipeline_config (registry-validated).
+        # Fall back to cfg["strategies"][strategy_id]["agents"] for backwards compatibility
+        # when the pipeline is called directly without going through StrategyLoader.
+        agents = (
+            cfg.get("_agents")
+            or cfg.get("strategies", {}).get(strategy_id, {}).get("agents", [])
+        )
         if agents:
             primary_agent = str(agents[0])
 

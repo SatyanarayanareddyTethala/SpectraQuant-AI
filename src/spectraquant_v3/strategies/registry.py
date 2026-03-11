@@ -27,7 +27,7 @@ Usage::
 
 from __future__ import annotations
 
-from spectraquant_v3.strategies.strategy_definition import StrategyDefinition
+from spectraquant_v3.strategies.strategy_definition import RiskConfig, StrategyDefinition
 
 
 class StrategyRegistry:
@@ -136,6 +136,18 @@ _BUILTIN_STRATEGIES: list[StrategyDefinition] = [
         allocator="rank_vol_target_allocator",
         rebalance_freq="W",
         tags=["crypto", "momentum", "baseline"],
+    ),
+    StrategyDefinition(
+        strategy_id="crypto_momentum_v2",
+        asset_class="crypto",
+        universe_profile="dynamic_topN",
+        feature_profile="default",
+        agents=["crypto_momentum_v1"],
+        policy="confidence_filter_v1",
+        allocator="vol_target_v1",
+        rebalance_freq="W",
+        risk_config=RiskConfig(max_weight=0.25, target_vol=0.15),
+        tags=["crypto", "momentum", "vol_target"],
     ),
     StrategyDefinition(
         strategy_id="crypto_momentum_news_hybrid_v1",
