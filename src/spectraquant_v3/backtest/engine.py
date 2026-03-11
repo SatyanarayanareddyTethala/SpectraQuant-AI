@@ -18,12 +18,14 @@ For each rebalance step the engine:
 
 1. Slices each symbol's OHLCV DataFrame to the in-sample window.
 2. Computes features (via the supplied feature engine).
-3. Runs the signal agent(s) on the latest available row.
-4. Applies the meta-policy filter.
-5. Runs the allocator to obtain target weights.
-6. Computes the step's portfolio return by applying weights to the *next*
+3. Optionally injects point-in-time ``news_sentiment_score`` from *news_feature_map*
+   so that news-conditioned hybrid strategies use real news signals.
+4. Runs the signal agent(s) on the latest available row.
+5. Applies the meta-policy filter.
+6. Runs the allocator to obtain target weights.
+7. Computes the step's portfolio return by applying weights to the *next*
    period's actual returns (``close[t+1] / close[t] - 1``).
-7. Accumulates the NAV and records a :class:`RebalanceSnapshot`.
+8. Accumulates the NAV and records a :class:`RebalanceSnapshot`.
 
 After all steps the engine computes aggregate performance metrics and
 returns a :class:`~spectraquant_v3.backtest.results.BacktestResults`.
@@ -92,6 +94,16 @@ class BacktestEngine:
         slippage:              Slippage cost in basis points (bps).
         spread:                Spread cost in basis points (bps).
         run_id:                Identifier for this backtest run.
+        news_feature_map:      Optional dict mapping canonical symbol →
+                               DataFrame with a ``news_sentiment_score``
+                               column and a DatetimeIndex.  When supplied,
+                               the point-in-time news sentiment score
+                               (last score at or before each rebalance date)
+                               is injected into the feature map so that
+                               news-conditioned hybrid strategies use real
+                               news signals rather than falling back to
+                               pure momentum.  Symbols not present in this
+                               map degrade gracefully (no news fallback).
     """
 
     def __init__(
@@ -108,6 +120,7 @@ class BacktestEngine:
         slippage: float = 0.0,
         spread: float = 0.0,
         run_id: str = "backtest",
+        news_feature_map: dict[str, pd.DataFrame] | None = None,
     ) -> None:
         if not price_data:
             raise EmptyPriceDataError(
@@ -150,6 +163,7 @@ class BacktestEngine:
         self._slippage_bps = float(slippage)
         self._spread_bps = float(spread)
         self._run_id = run_id
+        self._news_feature_map: dict[str, pd.DataFrame] = dict(news_feature_map) if news_feature_map else {}
 
         # Cost model uses the same execution simulator semantics as paper mode.
         # We encode commission/slippage/spread (all in bps) as an aggregate
@@ -246,6 +260,13 @@ class BacktestEngine:
 
         if not feature_map:
             return None
+
+        # Inject news sentiment scores when a news_feature_map is available.
+        # This enriches the feature DataFrames with the point-in-time
+        # news_sentiment_score so that hybrid agents can use real news signals
+        # rather than falling back to pure momentum.
+        if self._news_feature_map:
+            feature_map = self._inject_news_scores(feature_map, date)
 
         # Generate signals
         signals = run_signal_agent(self._signal_agent, feature_map, as_of=as_of_str)
@@ -422,6 +443,73 @@ class BacktestEngine:
                 if math.isfinite(v) and v > 0:
                     vol_map[sym] = v
         return vol_map
+
+    def _inject_news_scores(
+        self,
+        feature_map: dict[str, pd.DataFrame],
+        date: pd.Timestamp,
+    ) -> dict[str, pd.DataFrame]:
+        """Inject point-in-time ``news_sentiment_score`` into feature DataFrames.
+
+        For each symbol in *feature_map*, looks up the corresponding DataFrame
+        in :attr:`_news_feature_map` and finds the most-recent
+        ``news_sentiment_score`` value at or before *date*.  The score is then
+        broadcast as a constant column onto the symbol's feature DataFrame so
+        that news-conditioned hybrid agents consume it on the latest row.
+
+        If no news data is available for a symbol (either missing from the map
+        or no rows before *date*), the feature DataFrame is returned unchanged
+        so the hybrid agent degrades gracefully to pure momentum.
+
+        This method never raises; per-symbol errors are logged at DEBUG level
+        and the original feature DataFrame is returned intact.
+
+        Args:
+            feature_map:  Dict of symbol → enriched feature DataFrame.
+            date:         Current rebalance step date (upper-bound for news lookup).
+
+        Returns:
+            New dict with the same keys; values are copies enriched with
+            ``news_sentiment_score`` where news data was available.
+        """
+        enriched: dict[str, pd.DataFrame] = {}
+        for sym, feat_df in feature_map.items():
+            news_df = self._news_feature_map.get(sym)
+            if news_df is None or news_df.empty:
+                enriched[sym] = feat_df
+                continue
+
+            try:
+                # Select only rows at or before the step date (point-in-time safe)
+                past_news = news_df.loc[news_df.index <= date]
+                if past_news.empty:
+                    enriched[sym] = feat_df
+                    continue
+
+                col = "news_sentiment_score"
+                if col not in past_news.columns:
+                    enriched[sym] = feat_df
+                    continue
+
+                latest_score = past_news[col].dropna()
+                if latest_score.empty:
+                    enriched[sym] = feat_df
+                    continue
+
+                score_value = float(latest_score.iloc[-1])
+                copy = feat_df.copy()
+                copy[col] = score_value
+                enriched[sym] = copy
+            except (KeyError, ValueError, IndexError, TypeError, AttributeError) as exc:
+                logger.debug(
+                    "BacktestEngine: news injection failed for %s at %s: %s",
+                    sym,
+                    date,
+                    exc,
+                )
+                enriched[sym] = feat_df
+
+        return enriched
 
     def _compute_step_return(
         self, weight_map: dict[str, float], date: pd.Timestamp
