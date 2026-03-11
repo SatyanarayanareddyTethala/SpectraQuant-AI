@@ -166,6 +166,50 @@ class TestValidateAssetClassConfig:
             validate_equity_config,
         )
 
+    # ---- type checks: non-dict values must be rejected ----
+
+    def test_validate_equity_config_raises_when_equities_is_null(self) -> None:
+        from spectraquant_v3.core.config import validate_equity_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_equity_config({"equities": None})
+
+    def test_validate_equity_config_raises_when_equities_is_list(self) -> None:
+        from spectraquant_v3.core.config import validate_equity_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_equity_config({"equities": ["INFY.NS", "TCS.NS"]})
+
+    def test_validate_equity_config_raises_when_equities_is_string(self) -> None:
+        from spectraquant_v3.core.config import validate_equity_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_equity_config({"equities": "INFY.NS"})
+
+    def test_validate_crypto_config_raises_when_crypto_is_null(self) -> None:
+        from spectraquant_v3.core.config import validate_crypto_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_crypto_config({"crypto": None})
+
+    def test_validate_crypto_config_raises_when_crypto_is_list(self) -> None:
+        from spectraquant_v3.core.config import validate_crypto_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_crypto_config({"crypto": ["BTC", "ETH"]})
+
+    def test_validate_crypto_config_raises_when_crypto_is_string(self) -> None:
+        from spectraquant_v3.core.config import validate_crypto_config
+        from spectraquant_v3.core.errors import ConfigValidationError
+
+        with pytest.raises(ConfigValidationError, match="mapping"):
+            validate_crypto_config({"crypto": "BTC"})
+
 
 # ===========================================================================
 # 2. Pipeline entry-point fail-fast on bad config
