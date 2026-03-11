@@ -24,7 +24,6 @@ from spectraquant_v3.crypto.features.engine import CryptoFeatureEngine
 from spectraquant_v3.strategies.agents.registry import AgentRegistry
 from spectraquant_v3.crypto.symbols.registry import build_registry_from_config
 from spectraquant_v3.crypto.universe.builder import CryptoUniverseBuilder
-from spectraquant_v3.pipeline.allocator import Allocator
 from spectraquant_v3.strategies.agents.runner import run_signal_agent
 from spectraquant_v3.strategies.loader import StrategyLoader
 from spectraquant_v3.pipeline.meta_policy import MetaPolicy
@@ -189,6 +188,8 @@ def run_crypto_pipeline(
         # ------------------------------------------------------------------
         # Stage 7: Allocation
         # ------------------------------------------------------------------
+        from spectraquant_v3.strategies.allocators.registry import AllocatorRegistry
+
         defn = StrategyLoader.load(strategy_id)
         import math
         vol_map = {
@@ -199,35 +200,9 @@ def run_crypto_pipeline(
             for v in [feature_map[sym]["vol_realised"].iloc[-1]]
             if math.isfinite(float(v)) and float(v) > 0
         }
-        if defn.allocator == "rank_vol_target_allocator":
-            from spectraquant_v3.strategies.allocators.registry import AllocatorRegistry
-
-            rank_alloc = AllocatorRegistry.get(defn.allocator).from_config(cfg, run_id=ctx.run_id)
-            ranked_input = {
-                d.canonical_symbol: {
-                    "rank": i + 1,
-                    "confidence": d.composite_confidence,
-                    "vol": vol_map.get(d.canonical_symbol, 0.0),
-                }
-                for i, d in enumerate(sorted((x for x in decisions if x.passed), key=lambda x: abs(x.composite_score), reverse=True))
-            }
-            weights, _diag = rank_alloc.allocate(ranked_input)
-            from spectraquant_v3.core.schema import AllocationRow
-
-            allocations = [
-                AllocationRow(
-                    run_id=ctx.run_id,
-                    canonical_symbol=d.canonical_symbol,
-                    asset_class=d.asset_class,
-                    target_weight=float(weights.get(d.canonical_symbol, 0.0)),
-                    blocked=not d.passed,
-                    blocked_reason="" if d.passed else d.reason,
-                )
-                for d in decisions
-            ]
-        else:
-            allocator = Allocator.from_config(cfg, run_id=ctx.run_id)
-            allocations = allocator.allocate(decisions, vol_map=vol_map or None)
+        allocator_cls = AllocatorRegistry.get(defn.allocator)
+        allocator = allocator_cls.from_config(cfg, run_id=ctx.run_id)
+        allocations = allocator.allocate_decisions(decisions, vol_map=vol_map or None)
 
         ctx.mark_stage_ok(
             RunStage.ALLOCATION.value,
