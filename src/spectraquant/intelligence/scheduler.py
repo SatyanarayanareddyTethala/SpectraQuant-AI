@@ -10,8 +10,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import apscheduler.schedulers.background as aps_bg
-
 logger = logging.getLogger(__name__)
 
 
@@ -23,6 +21,7 @@ class IntelligenceScheduler:
     """Manages recurring intelligence jobs via APScheduler."""
 
     def __init__(self, config: Any = None) -> None:
+        from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
         from apscheduler.triggers.interval import IntervalTrigger
 
@@ -31,7 +30,7 @@ class IntelligenceScheduler:
             config = load_config()
 
         self.config = config
-        self.scheduler = aps_bg.BackgroundScheduler(timezone=config.market.timezone)
+        self.scheduler = BackgroundScheduler(timezone=config.market.timezone)
 
         sched_cfg = config.scheduler
 
