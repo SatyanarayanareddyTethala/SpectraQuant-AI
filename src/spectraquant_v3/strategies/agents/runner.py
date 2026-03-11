@@ -37,13 +37,32 @@ def _error_row_for(
     the error row is always a fully-valid :class:`SignalRow` even if the
     agent is poorly implemented.
     """
+    agent_id = str(getattr(agent, "agent_id", agent.__class__.__name__))
+
+    # Prefer an explicit asset_class on the agent; otherwise, try to infer it
+    # from the agent_id prefix, and finally fall back to a non-empty sentinel.
+    raw_asset_class = getattr(agent, "asset_class", None)
+    if raw_asset_class:
+        asset_class = str(raw_asset_class)
+    elif agent_id.startswith("crypto_"):
+        asset_class = "crypto"
+    elif agent_id.startswith("equity_"):
+        asset_class = "equity"
+    else:
+        asset_class = "unknown"
+
+    # Horizon is required to be non-empty; use the agent attribute when
+    # available, otherwise fall back to a non-empty sentinel.
+   _raw_horizon = getattr(agent, "horizon", None)
+    horizon = str(_raw_horizon) if _raw_horizon else "unknown"
+
     return SignalRow(
         run_id=str(getattr(agent, "run_id", "unknown")),
         timestamp=as_of,
         canonical_symbol=symbol,
-        asset_class=str(getattr(agent, "asset_class", "")),
-        agent_id=str(getattr(agent, "agent_id", agent.__class__.__name__)),
-        horizon=str(getattr(agent, "horizon", "")),
+        asset_class=asset_class,
+        agent_id=agent_id,
+        horizon=horizon,
         signal_score=0.0,
         confidence=0.0,
         status=SignalStatus.ERROR.value,
