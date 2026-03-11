@@ -101,6 +101,20 @@ class ResultStore:
         """
         return self._write_json(experiment_id, "backtest_summary.json", summary)
 
+    def write_hybrid_params(
+        self, experiment_id: str, params: dict[str, Any]
+    ) -> Path:
+        """Persist hybrid strategy blend parameters for *experiment_id*.
+
+        The file is written as ``hybrid_params.json`` and is used by
+        :meth:`read_hybrid_params` and
+        :meth:`~spectraquant_v3.experiments.experiment_manager.ExperimentManager.compare_hybrid_variants`.
+
+        Returns:
+            Path to the written file.
+        """
+        return self._write_json(experiment_id, "hybrid_params.json", params)
+
     # ------------------------------------------------------------------
     # Read helpers
     # ------------------------------------------------------------------
@@ -116,6 +130,15 @@ class ResultStore:
     def read_dataset_manifest(self, experiment_id: str) -> dict[str, Any]:
         """Load the dataset manifest for *experiment_id*."""
         return self._read_json(experiment_id, "dataset_manifest.json")
+
+    def read_hybrid_params(self, experiment_id: str) -> dict[str, Any]:
+        """Load the hybrid strategy blend parameters for *experiment_id*.
+
+        Raises:
+            FileNotFoundError: If ``hybrid_params.json`` does not exist for
+                               *experiment_id*.
+        """
+        return self._read_json(experiment_id, "hybrid_params.json")
 
     def read_backtest_summary(self, experiment_id: str) -> dict[str, Any]:
         """Load the backtest summary for *experiment_id*."""

@@ -218,6 +218,218 @@ class ExperimentManager:
         return rows
 
     # ------------------------------------------------------------------
+    # Hybrid strategy variant support
+    # ------------------------------------------------------------------
+
+    def run_hybrid_backtest_experiment(
+        self,
+        experiment_id: str,
+        params: "HybridStrategyParams",  # noqa: F821 – imported lazily below
+        price_data: "dict[str, Any]",
+        base_cfg: "dict[str, Any]",
+        news_feature_map: "dict[str, Any] | None" = None,
+        rebalance_freq: str = "ME",
+        window_type: str = "expanding",
+        min_in_sample_periods: int = 30,
+        commission: float = 0.0,
+        slippage: float = 0.0,
+        spread: float = 0.0,
+        dataset_version: str = "",
+        dry_run: bool = False,
+    ) -> "dict[str, Any]":
+        """Run a hybrid strategy variant backtest and record the experiment.
+
+        This is the primary entry point for hybrid strategy research.
+        It:
+
+        1. Injects ``params`` into a copy of ``base_cfg``, so that the hybrid
+           agent receives the correct blend weights and thresholds.
+        2. Runs a :class:`~spectraquant_v3.backtest.engine.BacktestEngine`
+           walk-forward simulation using the configured strategy.
+        3. Records all blend parameters as ``hybrid_params`` in the
+           experiment's ``config.json`` for full reproducibility.
+        4. Persists standard metrics plus the blend params so that
+           :meth:`compare_hybrid_variants` can produce a clean side-by-side
+           table.
+
+        Args:
+            experiment_id:        Unique experiment identifier.
+            params:               :class:`~spectraquant_v3.experiments.hybrid_params.HybridStrategyParams`
+                                  controlling the blend weights/thresholds.
+            price_data:           Dict of canonical symbol → OHLCV DataFrame.
+            base_cfg:             Base pipeline config (not mutated).
+            news_feature_map:     Optional dict of symbol → news DataFrame.
+            rebalance_freq:       Pandas offset alias for rebalance cadence.
+            window_type:          ``"expanding"`` or ``"rolling"``.
+            min_in_sample_periods: Minimum bars before first rebalance.
+            commission:           Commission cost in bps.
+            slippage:             Slippage cost in bps.
+            spread:               Spread cost in bps.
+            dataset_version:      Dataset label for reproducibility.
+            dry_run:              When ``True`` skip all file writes.
+
+        Returns:
+            Dict with keys: ``experiment_id``, ``strategy_id``, ``run_id``,
+            ``hybrid_params``, ``metrics``, ``artefact_paths``,
+            ``backtest_run_id``, ``n_steps``.
+        """
+        from spectraquant_v3.backtest.engine import BacktestEngine  # noqa: PLC0415
+        from spectraquant_v3.experiments.hybrid_params import HybridStrategyParams  # noqa: PLC0415, F401
+
+        # Build cfg with hybrid params applied
+        cfg = params.inject_into_cfg(base_cfg)
+
+        # Determine asset_class from strategy_id
+        from spectraquant_v3.strategies.registry import StrategyRegistry  # noqa: PLC0415
+
+        try:
+            defn = StrategyRegistry.get(params.strategy_id)
+            asset_class = defn.asset_class
+        except KeyError:
+            # Fallback: infer from strategy_id naming convention
+            asset_class = (
+                "crypto" if "crypto" in params.strategy_id else "equity"
+            )
+
+        run_id = params.run_id()
+
+        engine = BacktestEngine(
+            cfg=cfg,
+            asset_class=asset_class,
+            price_data=price_data,
+            strategy_id=params.strategy_id,
+            rebalance_freq=rebalance_freq,
+            window_type=window_type,
+            min_in_sample_periods=min_in_sample_periods,
+            commission=commission,
+            slippage=slippage,
+            spread=spread,
+            run_id=run_id,
+            news_feature_map=news_feature_map or {},
+        )
+
+        bt_results = engine.run()
+        metrics = self._metrics_from_backtest(bt_results)
+        params_dict = params.to_dict()
+
+        tracker = RunTracker(
+            experiment_id=experiment_id,
+            strategy_id=params.strategy_id,
+            dataset_version=dataset_version,
+            config={
+                **cfg,
+                "hybrid_params": params_dict,
+            },
+        )
+        tracker.record_metrics(metrics)
+
+        if not dry_run:
+            paths = tracker.save(self.store)
+
+            # Write hybrid_params.json for quick lookup
+            self.store.write_hybrid_params(experiment_id, params_dict)
+
+            # Write backtest summary
+            summary = self._backtest_summary(bt_results)
+            self.store.write_backtest_summary(experiment_id, summary)
+
+            if price_data:
+                manifest = self._build_dataset_manifest(
+                    params.strategy_id, dataset_version, price_data
+                )
+                self.store.write_dataset_manifest(experiment_id, manifest)
+        else:
+            paths: dict[str, Any] = {}
+
+        return {
+            "experiment_id": experiment_id,
+            "strategy_id": params.strategy_id,
+            "run_id": run_id,
+            "hybrid_params": params_dict,
+            "metrics": tracker.metrics,
+            "artefact_paths": paths,
+            "backtest_run_id": bt_results.run_id,
+            "n_steps": bt_results.n_steps,
+        }
+
+    def compare_hybrid_variants(
+        self, exp_ids: "list[str]"
+    ) -> "list[dict[str, Any]]":
+        """Return a comparison table for hybrid strategy experiment variants.
+
+        Extends :meth:`compare_experiments` by additionally surfacing the
+        blend parameters (``momentum_weight``, ``news_weight``,
+        ``vol_gate_threshold``, ``min_confidence``) from each experiment's
+        stored ``hybrid_params.json`` (if present).
+
+        Args:
+            exp_ids: Ordered list of experiment IDs to compare.
+
+        Returns:
+            List of dicts, one per experiment, with keys:
+
+            - ``experiment_id``
+            - ``strategy_id``
+            - ``momentum_weight``
+            - ``news_weight``
+            - ``vol_gate_threshold``
+            - ``min_confidence``
+            - ``sharpe``
+            - ``cagr``
+            - ``max_drawdown``
+            - ``volatility``
+            - ``win_rate``
+            - ``turnover``
+            - ``total_return``
+            - ``n_steps``
+            - ``config_hash``
+            - ``run_timestamp``
+        """
+        base_rows = {r["experiment_id"]: r for r in self.compare_experiments(exp_ids)}
+
+        rows = []
+        for eid in exp_ids:
+            base = base_rows.get(eid, {"experiment_id": eid})
+
+            # Try to read hybrid_params.json; gracefully fall back to config doc
+            hybrid_params: dict[str, Any] = {}
+            try:
+                hybrid_params = self.store.read_hybrid_params(eid)
+            except FileNotFoundError:
+                # Try extracting from config doc hybrid_params key
+                try:
+                    config_doc = self.store.read_config(eid)
+                    hybrid_params = config_doc.get("metrics_payload", {}).get(
+                        "hybrid_params", {}
+                    ) or config_doc.get("hybrid_params", {})
+                except FileNotFoundError:
+                    hybrid_params = {}
+
+            row: dict[str, Any] = {
+                "experiment_id": eid,
+                "strategy_id": base.get("strategy_id"),
+                "momentum_weight": hybrid_params.get("momentum_weight"),
+                "news_weight": hybrid_params.get("news_weight"),
+                "vol_gate_threshold": hybrid_params.get("vol_gate_threshold"),
+                "min_confidence": hybrid_params.get("min_confidence"),
+                "sharpe": base.get("sharpe"),
+                "cagr": base.get("cagr"),
+                "max_drawdown": base.get("max_drawdown"),
+                "volatility": base.get("volatility"),
+                "win_rate": base.get("win_rate"),
+                "turnover": base.get("turnover"),
+                "total_return": base.get("total_return"),
+                "n_steps": base.get("n_steps"),
+                "config_hash": base.get("config_hash"),
+                "run_timestamp": base.get("run_timestamp"),
+            }
+            if base.get("error"):
+                row["error"] = base["error"]
+            rows.append(row)
+
+        return rows
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
