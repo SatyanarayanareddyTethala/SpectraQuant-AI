@@ -77,6 +77,20 @@ class Allocator:
     # Public API
     # ------------------------------------------------------------------
 
+    def allocate_decisions(
+        self,
+        decisions: list[PolicyDecision],
+        vol_map: dict[str, float] | None = None,
+    ) -> list[AllocationRow]:
+        """Uniform dispatch interface: delegates to :meth:`allocate`.
+
+        Both :class:`Allocator` and
+        :class:`~spectraquant_v3.strategies.allocators.rank_vol_target_allocator.RankVolTargetAllocator`
+        expose this method so that pipelines can use registry-driven dispatch
+        without hardcoding allocator class names.
+        """
+        return self.allocate(decisions, vol_map=vol_map)
+
     def allocate(
         self,
         decisions: list[PolicyDecision],

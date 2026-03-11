@@ -7,9 +7,13 @@ for each symbol and produces deterministic long-only target weights.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import math
+
+if TYPE_CHECKING:
+    from spectraquant_v3.core.schema import AllocationRow
+    from spectraquant_v3.pipeline.meta_policy import PolicyDecision
 
 
 @dataclass
@@ -21,20 +25,21 @@ class RankVolTargetAllocator:
     max_gross_leverage: float = 1.0
     min_tradable_weight: float = 0.0
     missing_vol: float = 0.20
+    run_id: str = "unknown"
 
     @classmethod
     def from_config(
         cls,
         cfg: dict[str, Any],
-        run_id: str | None = None,  # kept for parity with other allocators
+        run_id: str | None = None,
     ) -> "RankVolTargetAllocator":
-        del run_id
         portfolio = cfg.get("portfolio", {})
         return cls(
             target_vol=float(portfolio.get("target_vol", 0.15)),
             max_weight=float(portfolio.get("max_weight", 0.20)),
             max_gross_leverage=float(portfolio.get("max_gross_leverage", 1.0)),
             min_tradable_weight=float(portfolio.get("min_weight", 0.0)),
+            run_id=run_id or "unknown",
         )
 
     def allocate(
@@ -68,6 +73,59 @@ class RankVolTargetAllocator:
             "dropped_symbols": dropped_symbols,
         }
         return final, diagnostics
+
+    def allocate_decisions(
+        self,
+        decisions: list[PolicyDecision],
+        vol_map: dict[str, float] | None = None,
+    ) -> list[AllocationRow]:
+        """Uniform dispatch interface compatible with :class:`~spectraquant_v3.pipeline.allocator.Allocator`.
+
+        Converts :class:`~spectraquant_v3.pipeline.meta_policy.PolicyDecision` objects
+        into the ``ranked_signals`` format expected by :meth:`allocate`, runs the
+        allocation, and wraps the output as
+        :class:`~spectraquant_v3.core.schema.AllocationRow` objects.
+
+        Passed symbols are ranked by descending ``|composite_score|``.
+        Blocked symbols are included with ``target_weight=0``.
+        """
+        from spectraquant_v3.core.schema import AllocationRow
+
+        vol_map = vol_map or {}
+        passed = sorted(
+            (d for d in decisions if d.passed),
+            key=lambda d: abs(d.composite_score),
+            reverse=True,
+        )
+
+        ranked_input = {
+            d.canonical_symbol: {
+                "rank": float(i + 1),
+                "confidence": d.composite_confidence,
+                "vol": vol_map.get(d.canonical_symbol, 0.0),
+            }
+            for i, d in enumerate(passed)
+        }
+
+        weights: dict[str, float]
+        if ranked_input:
+            weights, _ = self.allocate(ranked_input)
+        else:
+            weights = {}
+
+        rows: list[AllocationRow] = []
+        for d in decisions:
+            rows.append(
+                AllocationRow(
+                    run_id=self.run_id,
+                    canonical_symbol=d.canonical_symbol,
+                    asset_class=d.asset_class,
+                    target_weight=float(weights.get(d.canonical_symbol, 0.0)),
+                    blocked=not d.passed,
+                    blocked_reason="" if d.passed else d.reason,
+                )
+            )
+        return rows
 
     def _ranks_to_base_weights(
         self,

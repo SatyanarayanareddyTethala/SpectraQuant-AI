@@ -19,11 +19,11 @@ from spectraquant_v3.core.config import validate_config, validate_equity_config
 from spectraquant_v3.equities.features.engine import EquityFeatureEngine
 from spectraquant_v3.equities.symbols.registry import build_registry_from_config
 from spectraquant_v3.equities.universe.builder import EquityUniverseBuilder
-from spectraquant_v3.pipeline.allocator import Allocator
 from spectraquant_v3.pipeline.meta_policy import MetaPolicy
 from spectraquant_v3.pipeline.reporter import PipelineReporter
 from spectraquant_v3.strategies.agents.registry import AgentRegistry
 from spectraquant_v3.strategies.agents.runner import run_signal_agent
+from spectraquant_v3.strategies.loader import StrategyLoader
 
 
 def run_equity_pipeline(
@@ -180,7 +180,9 @@ def run_equity_pipeline(
         # ------------------------------------------------------------------
         # Stage 7: Allocation
         # ------------------------------------------------------------------
-        allocator = Allocator.from_config(cfg, run_id=ctx.run_id)
+        from spectraquant_v3.strategies.allocators.registry import AllocatorRegistry
+
+        defn = StrategyLoader.load(strategy_id)
         import math
         vol_map = {
             sym: float(v)
@@ -190,7 +192,9 @@ def run_equity_pipeline(
             for v in [feature_map[sym]["vol_realised"].iloc[-1]]
             if math.isfinite(float(v)) and float(v) > 0
         }
-        allocations = allocator.allocate(decisions, vol_map=vol_map or None)
+        allocator_cls = AllocatorRegistry.get(defn.allocator)
+        allocator = allocator_cls.from_config(cfg, run_id=ctx.run_id)
+        allocations = allocator.allocate_decisions(decisions, vol_map=vol_map or None)
 
         ctx.mark_stage_ok(
             RunStage.ALLOCATION.value,
