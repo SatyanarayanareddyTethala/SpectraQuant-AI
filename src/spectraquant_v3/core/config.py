@@ -230,7 +230,7 @@ def validate_equity_config(cfg: dict[str, Any]) -> None:
         cfg: Merged configuration dictionary.
 
     Raises:
-        ConfigValidationError: If the ``equities`` key is absent.
+        ConfigValidationError: If the ``equities`` key is absent or not a mapping.
     """
     from spectraquant_v3.core.errors import ConfigValidationError
 
@@ -238,6 +238,10 @@ def validate_equity_config(cfg: dict[str, Any]) -> None:
         raise ConfigValidationError(
             "Equity pipeline config is missing required 'equities' section. "
             "Use get_equity_config() or include an 'equities' key in your config dict."
+        )
+    if not isinstance(cfg["equities"], dict):
+        raise ConfigValidationError(
+            f"config['equities'] must be a mapping, got {type(cfg['equities']).__name__}."
         )
 
 
@@ -252,7 +256,7 @@ def validate_crypto_config(cfg: dict[str, Any]) -> None:
         cfg: Merged configuration dictionary.
 
     Raises:
-        ConfigValidationError: If the ``crypto`` key is absent.
+        ConfigValidationError: If the ``crypto`` key is absent or not a mapping.
     """
     from spectraquant_v3.core.errors import ConfigValidationError
 
@@ -260,6 +264,10 @@ def validate_crypto_config(cfg: dict[str, Any]) -> None:
         raise ConfigValidationError(
             "Crypto pipeline config is missing required 'crypto' section. "
             "Use get_crypto_config() or include a 'crypto' key in your config dict."
+        )
+    if not isinstance(cfg["crypto"], dict):
+        raise ConfigValidationError(
+            f"config['crypto'] must be a mapping, got {type(cfg['crypto']).__name__}."
         )
 
 
