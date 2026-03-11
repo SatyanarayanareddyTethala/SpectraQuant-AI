@@ -494,3 +494,466 @@ class TestBacktestDeterminism:
         df1 = store.read_as_dataframe("ETH")
         df2 = store.read_as_dataframe("ETH")
         pd.testing.assert_frame_equal(df1, df2)
+
+
+# ===========================================================================
+# News intelligence feature builder tests
+# ===========================================================================
+
+
+def _intel_records(
+    symbol: str = "AAPL",
+    asset: str = "equity",
+    dates_sentiments: list[tuple[str, float]] | None = None,
+) -> list[dict[str, Any]]:
+    """Return a list of minimal record dicts for feature-builder tests."""
+    if dates_sentiments is None:
+        dates_sentiments = [("2025-01-10T12:00:00", 0.5)]
+    records = []
+    for ts, sent in dates_sentiments:
+        records.append(
+            {
+                "canonical_symbol": symbol,
+                "asset": asset,
+                "timestamp": ts,
+                "event_type": "earnings",
+                "sentiment_score": sent,
+                "impact_score": abs(sent),
+                "article_count": 2,
+                "source_urls": [],
+                "confidence": 0.8,
+                "rationale": "test",
+                "provider": "test",
+            }
+        )
+    return records
+
+
+class TestBuildDailyFeatures:
+    """Unit tests for the ``build_daily_features`` standalone function."""
+
+    def test_empty_records_returns_empty_dataframe(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        result = build_daily_features([])
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+    def test_empty_has_feature_columns(self) -> None:
+        from spectraquant_v3.core.news_intel_features import (
+            _FEATURE_COLUMNS,
+            build_daily_features,
+        )
+
+        result = build_daily_features([])
+        assert list(result.columns) == _FEATURE_COLUMNS
+
+    def test_single_record_produces_one_row(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(dates_sentiments=[("2025-01-10T12:00:00", 0.6)])
+        result = build_daily_features(records)
+        assert len(result) == 1
+
+    def test_two_records_same_day_aggregated_to_one_row(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-01-10T09:00:00", 0.4),
+                ("2025-01-10T17:00:00", 0.8),
+            ]
+        )
+        result = build_daily_features(records)
+        assert len(result) == 1
+        # Mean of 0.4 and 0.8
+        assert abs(result["news_sentiment_score"].iloc[0] - 0.6) < 1e-9
+
+    def test_two_records_different_days_produce_two_rows(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-01-10T09:00:00", 0.5),
+                ("2025-01-15T09:00:00", -0.3),
+            ]
+        )
+        result = build_daily_features(records)
+        assert len(result) == 2
+
+    def test_article_count_summed_per_day(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = [
+            {**_intel_records(dates_sentiments=[("2025-01-10T09:00:00", 0.5)])[0], "article_count": 3},
+            {**_intel_records(dates_sentiments=[("2025-01-10T15:00:00", 0.2)])[0], "article_count": 5},
+        ]
+        result = build_daily_features(records)
+        assert result["article_count"].iloc[0] == 8
+
+    def test_sorted_ascending_by_date(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-01-20T00:00:00", 0.1),
+                ("2025-01-10T00:00:00", 0.9),
+                ("2025-01-15T00:00:00", 0.5),
+            ]
+        )
+        result = build_daily_features(records)
+        assert list(result.index) == sorted(result.index)
+
+    def test_recency_weighted_columns_present(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(dates_sentiments=[("2025-01-10T00:00:00", 0.5)])
+        result = build_daily_features(records)
+        assert "news_sentiment_rw" in result.columns
+        assert "news_impact_rw" in result.columns
+
+    def test_recency_weighted_single_row_equals_plain(self) -> None:
+        """With a single record, EWM weight = 1, so rw == plain."""
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(dates_sentiments=[("2025-01-10T00:00:00", 0.7)])
+        result = build_daily_features(records)
+        assert abs(result["news_sentiment_rw"].iloc[0] - result["news_sentiment_score"].iloc[0]) < 1e-6
+
+    def test_output_is_deterministic(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-01-10T00:00:00", 0.4),
+                ("2025-01-15T00:00:00", -0.2),
+            ]
+        )
+        df1 = build_daily_features(records)
+        df2 = build_daily_features(records)
+        pd.testing.assert_frame_equal(df1, df2)
+
+    def test_invalid_halflife_raises(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        with pytest.raises(ValueError, match="recency_halflife_days"):
+            build_daily_features([], recency_halflife_days=0.0)
+
+
+class TestBuildDailyFeaturesPointInTime:
+    """Tests proving no future leakage occurs."""
+
+    def test_as_of_date_excludes_future_records(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-01-10T00:00:00", 0.5),  # past
+                ("2025-01-20T00:00:00", 0.9),  # future
+            ]
+        )
+        result = build_daily_features(records, as_of_date="2025-01-15T23:59:59")
+        assert len(result) == 1
+        assert result["news_sentiment_score"].iloc[0] == pytest.approx(0.5)
+
+    def test_as_of_date_includes_record_on_boundary(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(dates_sentiments=[("2025-01-15T12:00:00", 0.5)])
+        # Exact match: record at 12:00 on 2025-01-15; boundary at end of day
+        result = build_daily_features(records, as_of_date="2025-01-15T23:59:59")
+        assert len(result) == 1
+
+    def test_all_records_future_returns_empty(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2025-02-01T00:00:00", 0.5),
+                ("2025-03-01T00:00:00", 0.8),
+            ]
+        )
+        result = build_daily_features(records, as_of_date="2025-01-31")
+        assert result.empty
+
+    def test_no_as_of_date_includes_all_records(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(
+            dates_sentiments=[
+                ("2020-01-01T00:00:00", 0.1),
+                ("2030-12-31T00:00:00", 0.9),
+            ]
+        )
+        result = build_daily_features(records, as_of_date=None)
+        assert len(result) == 2
+
+    def test_as_of_date_exactly_on_record_timestamp_is_included(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        ts = "2025-01-15T12:00:00"
+        records = _intel_records(dates_sentiments=[(ts, 0.5)])
+        result = build_daily_features(records, as_of_date=ts)
+        assert len(result) == 1
+
+    def test_records_one_second_after_boundary_excluded(self) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records(dates_sentiments=[("2025-01-15T12:00:01", 0.5)])
+        result = build_daily_features(records, as_of_date="2025-01-15T12:00:00")
+        assert result.empty
+
+
+class TestBuildDailyFeaturesSymbolIsolation:
+    """Tests verifying correct per-symbol isolation."""
+
+    def test_different_symbols_isolated(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+
+        aapl_records = [
+            NewsIntelligenceRecord(**{
+                "canonical_symbol": "AAPL",
+                "asset": "equity",
+                "timestamp": "2025-01-10T12:00:00",
+                "event_type": "earnings",
+                "sentiment_score": 0.8,
+                "impact_score": 0.7,
+                "article_count": 2,
+                "source_urls": [],
+                "confidence": 0.9,
+                "rationale": "",
+                "provider": "test",
+            })
+        ]
+        msft_records = [
+            NewsIntelligenceRecord(**{
+                "canonical_symbol": "MSFT",
+                "asset": "equity",
+                "timestamp": "2025-01-10T12:00:00",
+                "event_type": "earnings",
+                "sentiment_score": -0.4,
+                "impact_score": 0.5,
+                "article_count": 1,
+                "source_urls": [],
+                "confidence": 0.7,
+                "rationale": "",
+                "provider": "test",
+            })
+        ]
+        store.write_records("AAPL", aapl_records)
+        store.write_records("MSFT", msft_records)
+
+        aapl_df = build_daily_features(store.read_records("AAPL"))
+        msft_df = build_daily_features(store.read_records("MSFT"))
+
+        assert aapl_df["news_sentiment_score"].iloc[0] == pytest.approx(0.8)
+        assert msft_df["news_sentiment_score"].iloc[0] == pytest.approx(-0.4)
+
+    def test_unknown_symbol_returns_empty(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        records = store.read_records("UNKNOWN_XYZ")
+        df = build_daily_features(records)
+        assert df.empty
+
+    def test_mixed_symbols_in_records_all_aggregated(self) -> None:
+        """Records from multiple symbols are all included when passed directly."""
+        from spectraquant_v3.core.news_intel_features import build_daily_features
+
+        records = _intel_records("AAPL", dates_sentiments=[("2025-01-10T00:00:00", 0.5)])
+        records += _intel_records("MSFT", dates_sentiments=[("2025-01-10T00:00:00", -0.2)])
+        # Both records are on the same day → one row after aggregation
+        result = build_daily_features(records)
+        assert len(result) == 1
+        assert result["news_sentiment_score"].iloc[0] == pytest.approx(0.15)
+
+
+class TestNewsIntelligenceFeatureBuilder:
+    """Tests for the high-level ``NewsIntelligenceFeatureBuilder`` class."""
+
+    def test_build_returns_dataframe(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record()])
+
+        builder = NewsIntelligenceFeatureBuilder()
+        df = builder.build(store, "AAPL")
+
+        assert isinstance(df, pd.DataFrame)
+        assert not df.empty
+
+    def test_build_empty_store_returns_empty(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        builder = NewsIntelligenceFeatureBuilder()
+        df = builder.build(store, "MISSING_SYM")
+        assert df.empty
+
+    def test_build_many_returns_dict(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record(canonical_symbol="AAPL")])
+        store.write_records("BTC", [_sample_record(canonical_symbol="BTC", asset="crypto")])
+
+        builder = NewsIntelligenceFeatureBuilder()
+        result = builder.build_many(store, ["AAPL", "BTC"])
+
+        assert isinstance(result, dict)
+        assert "AAPL" in result
+        assert "BTC" in result
+        assert not result["AAPL"].empty
+        assert not result["BTC"].empty
+
+    def test_build_many_symbol_isolation(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record(sentiment_score=0.9)])
+        store.write_records("ETH", [_sample_record(canonical_symbol="ETH", asset="crypto", sentiment_score=-0.6)])
+
+        builder = NewsIntelligenceFeatureBuilder()
+        result = builder.build_many(store, ["AAPL", "ETH"])
+
+        assert result["AAPL"]["news_sentiment_score"].iloc[0] == pytest.approx(0.9)
+        assert result["ETH"]["news_sentiment_score"].iloc[0] == pytest.approx(-0.6)
+
+    def test_build_many_missing_symbol_returns_empty(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        builder = NewsIntelligenceFeatureBuilder()
+        result = builder.build_many(store, ["GHOST_SYM"])
+        assert result["GHOST_SYM"].empty
+
+    def test_build_pit_filter_applied(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        records = [
+            _sample_record(timestamp="2025-01-10T12:00:00+00:00", sentiment_score=0.5),
+            _sample_record(timestamp="2025-02-10T12:00:00+00:00", sentiment_score=0.9),
+        ]
+        store.write_records("AAPL", records)
+
+        builder = NewsIntelligenceFeatureBuilder()
+        df = builder.build(store, "AAPL", as_of_date="2025-01-31")
+
+        # Only the Jan record should be included
+        assert len(df) == 1
+        assert df["news_sentiment_score"].iloc[0] == pytest.approx(0.5)
+
+    def test_invalid_halflife_raises(self) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+
+        with pytest.raises(ValueError, match="recency_halflife_days"):
+            NewsIntelligenceFeatureBuilder(recency_halflife_days=-1.0)
+
+    def test_deterministic_repeated_calls(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_features import NewsIntelligenceFeatureBuilder
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record(), _sample_record(event_type="partnership")])
+
+        builder = NewsIntelligenceFeatureBuilder()
+        df1 = builder.build(store, "AAPL")
+        df2 = builder.build(store, "AAPL")
+        pd.testing.assert_frame_equal(df1, df2)
+
+
+class TestStoreConvenienceMethods:
+    """Tests for NewsIntelligenceStore.build_news_feature_map()."""
+
+    def test_build_news_feature_map_returns_dict(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record()])
+
+        feature_map = store.build_news_feature_map(["AAPL"])
+        assert isinstance(feature_map, dict)
+        assert "AAPL" in feature_map
+        assert isinstance(feature_map["AAPL"], pd.DataFrame)
+
+    def test_build_news_feature_map_multiple_symbols(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        store.write_records("AAPL", [_sample_record()])
+        store.write_records("BTC", [_sample_record(canonical_symbol="BTC", asset="crypto")])
+
+        feature_map = store.build_news_feature_map(["AAPL", "BTC"])
+        assert len(feature_map) == 2
+
+    def test_build_news_feature_map_pit_filter(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        records = [
+            _sample_record(timestamp="2025-01-10T12:00:00+00:00", sentiment_score=0.5),
+            _sample_record(timestamp="2025-03-10T12:00:00+00:00", sentiment_score=0.9),
+        ]
+        store.write_records("AAPL", records)
+
+        feature_map = store.build_news_feature_map(["AAPL"], as_of_date="2025-02-01")
+        df = feature_map["AAPL"]
+        assert len(df) == 1
+
+    def test_build_news_feature_map_missing_symbol_empty(self, tmp_path: Any) -> None:
+        from spectraquant_v3.core.news_intel_store import NewsIntelligenceStore
+
+        store = NewsIntelligenceStore(tmp_path / "news_intel")
+        feature_map = store.build_news_feature_map(["NONEXISTENT"])
+        assert feature_map["NONEXISTENT"].empty
+
+
+class TestFeatureBuilderEquityImport:
+    """Verify the builder is importable from the equity features sub-package."""
+
+    def test_import_from_equities_features(self) -> None:
+        from spectraquant_v3.equities.features import (
+            NewsIntelligenceFeatureBuilder,
+            build_daily_features,
+        )
+
+        assert callable(build_daily_features)
+        builder = NewsIntelligenceFeatureBuilder()
+        assert builder.recency_halflife_days == 3.0
+
+
+class TestFeatureBuilderCryptoImport:
+    """Verify the builder is importable from the crypto features sub-package."""
+
+    def test_import_from_crypto_features(self) -> None:
+        from spectraquant_v3.crypto.features import (
+            NewsIntelligenceFeatureBuilder,
+            build_daily_features,
+        )
+
+        assert callable(build_daily_features)
+        builder = NewsIntelligenceFeatureBuilder()
+        assert builder.recency_halflife_days == 3.0
+
+    def test_same_class_both_asset_packages(self) -> None:
+        from spectraquant_v3.crypto.features import (
+            NewsIntelligenceFeatureBuilder as CryptoBuilder,
+        )
+        from spectraquant_v3.equities.features import (
+            NewsIntelligenceFeatureBuilder as EquityBuilder,
+        )
+
+        assert CryptoBuilder is EquityBuilder
