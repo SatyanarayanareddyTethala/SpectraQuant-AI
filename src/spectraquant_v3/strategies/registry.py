@@ -226,6 +226,17 @@ _BUILTIN_STRATEGIES: list[StrategyDefinition] = [
         rebalance_freq="ME",
         tags=["equity", "quality", "filter"],
     ),
+    StrategyDefinition(
+        strategy_id="equity_momentum_news_hybrid_v1",
+        asset_class="equity",
+        universe_profile="static",
+        feature_profile="equity_with_news",
+        agents=["equity_momentum_news_hybrid_v1"],
+        policy="confidence_filter_v1",
+        allocator="equal_weight",
+        rebalance_freq="ME",
+        tags=["equity", "momentum", "news", "hybrid", "volatility_gate"],
+    ),
 ]
 
 for _defn in _BUILTIN_STRATEGIES:

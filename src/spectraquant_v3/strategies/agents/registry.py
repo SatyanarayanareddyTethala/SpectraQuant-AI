@@ -129,8 +129,10 @@ def _register_builtins() -> None:
     from spectraquant_v3.crypto.signals.hybrid import CryptoMomentumNewsHybridAgent
     from spectraquant_v3.crypto.signals.momentum import CryptoMomentumAgent
     from spectraquant_v3.equities.signals.breakout import EquityBreakoutAgent
+    from spectraquant_v3.equities.signals.hybrid import EquityMomentumNewsHybridAgent
     from spectraquant_v3.equities.signals.mean_reversion import EquityMeanReversionAgent
     from spectraquant_v3.equities.signals.momentum import EquityMomentumAgent
+    from spectraquant_v3.equities.signals.news_sentiment import EquityNewsSentimentAgent
     from spectraquant_v3.equities.signals.quality import EquityQualityAgent
     from spectraquant_v3.equities.signals.volatility import EquityVolatilityAgent
 
@@ -142,6 +144,8 @@ def _register_builtins() -> None:
     AgentRegistry.register("equity_mean_reversion_v1", EquityMeanReversionAgent)
     AgentRegistry.register("equity_volatility_v1", EquityVolatilityAgent)
     AgentRegistry.register("equity_quality_v1", EquityQualityAgent)
+    AgentRegistry.register("equity_news_sentiment_v1", EquityNewsSentimentAgent)
+    AgentRegistry.register("equity_momentum_news_hybrid_v1", EquityMomentumNewsHybridAgent)
 
 
 _register_builtins()
