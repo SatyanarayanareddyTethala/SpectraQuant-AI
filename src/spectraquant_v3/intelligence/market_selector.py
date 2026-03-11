@@ -281,8 +281,7 @@ class MarketSelector:
         with a logged warning.
         """
         try:
-            normalized = timestamp.replace("Z", "+00:00")
-            event_time = datetime.fromisoformat(normalized)
+            event_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             if event_time.tzinfo is None:
                 event_time = event_time.replace(tzinfo=timezone.utc)
             now = datetime.now(tz=timezone.utc)
