@@ -492,7 +492,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 # 7. Install dependencies
 pip install -r requirements.txt
-pip install -r trading_assistant\requirements.txt  # ARCHIVED — skip
+# pip install -r trading_assistant\requirements.txt  # ARCHIVED — skip
 
 # 8. Install package
 pip install -e .
