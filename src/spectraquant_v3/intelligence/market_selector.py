@@ -173,6 +173,14 @@ class MarketSelector:
         self._both_threshold: float = float(cfg.get("both_threshold", 0.60))
         self._half_life_hours: float = float(cfg.get("half_life_hours", 6.0))
         self._top_n: int = int(cfg.get("top_n", 5))
+
+        if self._half_life_hours <= 0.0:
+            raise ValueError(
+                f"half_life_hours must be > 0, got {self._half_life_hours!r}"
+            )
+        if self._top_n < 0:
+            raise ValueError(f"top_n must be >= 0, got {self._top_n!r}")
+
         # Pre-compute decay constant
         self._lambda: float = math.log(2.0) / self._half_life_hours
 
@@ -273,7 +281,7 @@ class MarketSelector:
         with a logged warning.
         """
         try:
-            event_time = datetime.fromisoformat(timestamp)
+            event_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             if event_time.tzinfo is None:
                 event_time = event_time.replace(tzinfo=timezone.utc)
             now = datetime.now(tz=timezone.utc)
