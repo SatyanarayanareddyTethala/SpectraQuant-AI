@@ -107,3 +107,16 @@ class ExecutionMode(str, Enum):
 
     PAPER = "paper"
     LIVE = "live"
+
+
+class MarketRoute(str, Enum):
+    """Routing decision produced by the news-first market selector.
+
+    The selector scores current news intelligence for equities and crypto
+    separately and returns one of these four routing decisions.
+    """
+
+    RUN_EQUITIES = "run_equities"
+    RUN_CRYPTO = "run_crypto"
+    RUN_BOTH = "run_both"
+    RUN_NONE = "run_none"
