@@ -86,6 +86,10 @@ class NoSignalReason(str, Enum):
     BELOW_THRESHOLD = "below_threshold"
     """Computed score or confidence was below the configured minimum."""
 
+    NO_NEWS_DATA = "no_news_data"
+    """News data (catalyst column) was absent or contained only NaN values.
+    The agent degrades safely to NO_SIGNAL rather than raising."""
+
     UNKNOWN = "unknown"
     """Catch-all for cases not covered by the above categories."""
 

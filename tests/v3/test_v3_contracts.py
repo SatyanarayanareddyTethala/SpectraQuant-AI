@@ -96,6 +96,7 @@ class TestNoSignalReasonEnum:
             "top_n_cutoff",
             "below_threshold",
             "unknown",
+            "no_news_data",
         }
         assert {r.value for r in NoSignalReason} == expected
 
