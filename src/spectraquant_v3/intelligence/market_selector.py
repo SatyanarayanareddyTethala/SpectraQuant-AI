@@ -33,24 +33,35 @@ logger = logging.getLogger(__name__)
 # Event-type → asset-class affinity table
 # ---------------------------------------------------------------------------
 # Each event type carries an implicit affinity toward equities or crypto.
-# Adapted from the V2 event_ontology.py taxonomy (Phases 1–6 audit, §4 Idea 2).
+# Adapted from the V2 event_ontology.py taxonomy (Phases 1–6 audit, §4 Idea 2)
+# and extended with the full V3 taxonomy from the design spec.
 # Values represent the weight multiplier applied to a record's contribution to
 # the per-asset-class score.  All values are in [0.0, 1.0].
+# Keys are lower-case; incoming event_type values are lowercased before lookup.
 # ---------------------------------------------------------------------------
 
 EVENT_ASSET_AFFINITY: dict[str, dict[str, float]] = {
     # Equity-dominant events
     "earnings":              {"equity": 1.00, "crypto": 0.05},
+    "guidance":              {"equity": 0.95, "crypto": 0.05},
     "m_and_a":               {"equity": 0.90, "crypto": 0.10},
+    "dividend":              {"equity": 0.85, "crypto": 0.00},
     "corporate_action":      {"equity": 0.80, "crypto": 0.05},
+    "analyst":               {"equity": 0.75, "crypto": 0.10},
+    "sector_theme":          {"equity": 0.70, "crypto": 0.55},
     "operations_disruption": {"equity": 0.70, "crypto": 0.20},
     # Cross-asset events (macro affects both; crypto reacts more to rates)
     "macro":                 {"equity": 0.60, "crypto": 0.80},
     "risk":                  {"equity": 0.60, "crypto": 0.50},
-    # Crypto-dominant events
+    # Mixed / cross-asset
     "regulatory":            {"equity": 0.50, "crypto": 0.85},
+    "social_buzz":           {"equity": 0.20, "crypto": 0.45},
+    # Crypto-dominant events
     "listing":               {"equity": 0.10, "crypto": 0.90},
     "security_incident":     {"equity": 0.30, "crypto": 0.75},
+    "protocol_upgrade":      {"equity": 0.05, "crypto": 0.95},
+    "exchange_hack":         {"equity": 0.00, "crypto": 1.00},
+    "onchain":               {"equity": 0.00, "crypto": 0.95},
     # Fallback for unrecognised event types
     "unknown":               {"equity": 0.50, "crypto": 0.50},
 }
@@ -74,7 +85,91 @@ _VETO_REGIMES: frozenset[str] = frozenset({"PANIC"})
 
 
 # ---------------------------------------------------------------------------
-# Dataclass: MarketSelectorDecision
+# Typed configuration dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MarketSelectorConfig:
+    """Typed configuration for :class:`MarketSelector`.
+
+    Attributes:
+        min_score_to_run: Minimum per-asset-class score ``[0.0, 1.0]`` for a
+            class to be eligible for routing.  Default ``0.35``.
+        both_threshold:   Score above which both classes are strong enough to
+            run simultaneously (bypass the 1.5× dominance rule).  Default ``0.60``.
+        half_life_hours:  Exponential recency half-life in hours.  Must be > 0.
+            Default ``6.0``.
+        top_n:            Maximum contributing records to surface per asset
+            class.  Default ``5``.
+    """
+
+    min_score_to_run: float = 0.35
+    both_threshold: float = 0.60
+    half_life_hours: float = 6.0
+    top_n: int = 5
+
+    def __post_init__(self) -> None:
+        if self.half_life_hours <= 0.0:
+            raise ValueError(
+                f"half_life_hours must be > 0, got {self.half_life_hours!r}"
+            )
+        if self.top_n < 0:
+            raise ValueError(f"top_n must be >= 0, got {self.top_n!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MarketSelectorConfig:
+        """Create a :class:`MarketSelectorConfig` from a plain dict."""
+        return cls(
+            min_score_to_run=float(data.get("min_score_to_run", 0.35)),
+            both_threshold=float(data.get("both_threshold", 0.60)),
+            half_life_hours=float(data.get("half_life_hours", 6.0)),
+            top_n=int(data.get("top_n", 5)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict suitable for JSON export."""
+        return {
+            "min_score_to_run": self.min_score_to_run,
+            "both_threshold": self.both_threshold,
+            "half_life_hours": self.half_life_hours,
+            "top_n": self.top_n,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Typed input dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MarketSelectorInput:
+    """Typed input bundle for :meth:`MarketSelector.score_input`.
+
+    Attributes:
+        records:      Provider-agnostic news intelligence records (may be empty).
+        regime_label: Market regime string, e.g. ``"PANIC"``, ``"RISK_OFF"``,
+            ``"EVENT_DRIVEN"``.  Case-insensitive; unknown values are neutral.
+        as_of_utc:    Optional ISO-8601 UTC timestamp marking the logical
+            evaluation time.  Used for backtest reproducibility; does not
+            affect recency decay (which always uses wall-clock time).
+    """
+
+    records: list[NewsIntelligenceRecord] = field(default_factory=list)
+    regime_label: str = "UNKNOWN"
+    as_of_utc: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict (records are serialised via their own to_dict)."""
+        return {
+            "records": [r.to_dict() for r in self.records],
+            "regime_label": self.regime_label,
+            "as_of_utc": self.as_of_utc,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Dataclass: ScoredRecord and MarketSelectorDecision
 # ---------------------------------------------------------------------------
 
 
@@ -91,6 +186,15 @@ class ScoredRecord:
     asset: str
     raw_weight: float
     """Unscaled per-record contribution before normalisation."""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict suitable for JSON export."""
+        return {
+            "canonical_symbol": self.canonical_symbol,
+            "event_type": self.event_type,
+            "asset": self.asset,
+            "raw_weight": self.raw_weight,
+        }
 
 
 @dataclass
@@ -110,6 +214,7 @@ class MarketSelectorDecision:
             ``"UNKNOWN"`` if none was given.
         regime_vetoed:       ``True`` when the regime forced ``RUN_NONE``
             regardless of scores.
+        risk_off_penalty_applied: ``True`` when RISK_OFF reduced scores.
         threshold_used:      The ``min_score_to_run`` threshold applied.
         both_threshold_used: The ``both_threshold`` applied.
         rationale:           Human-readable score breakdown.
@@ -118,6 +223,7 @@ class MarketSelectorDecision:
             records for explainability.
         top_crypto_records:  Up to ``top_n`` highest-contributing crypto
             records for explainability.
+        version:             Selector version string (``"v1"``).
     """
 
     route: MarketRoute
@@ -128,12 +234,39 @@ class MarketSelectorDecision:
     record_count: int
     regime_label: str
     regime_vetoed: bool
+    risk_off_penalty_applied: bool
     threshold_used: float
     both_threshold_used: float
     rationale: str
     scored_at: str
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
+    version: str = "v1"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to a plain dict suitable for JSON export.
+
+        All fields are included; enum values are converted to their string
+        representation for JSON compatibility.
+        """
+        return {
+            "route": self.route.value,
+            "equity_score": self.equity_score,
+            "crypto_score": self.crypto_score,
+            "equity_record_count": self.equity_record_count,
+            "crypto_record_count": self.crypto_record_count,
+            "record_count": self.record_count,
+            "regime_label": self.regime_label,
+            "regime_vetoed": self.regime_vetoed,
+            "risk_off_penalty_applied": self.risk_off_penalty_applied,
+            "threshold_used": self.threshold_used,
+            "both_threshold_used": self.both_threshold_used,
+            "rationale": self.rationale,
+            "scored_at": self.scored_at,
+            "top_equity_records": [r.to_dict() for r in self.top_equity_records],
+            "top_crypto_records": [r.to_dict() for r in self.top_crypto_records],
+            "version": self.version,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +280,9 @@ class MarketSelector:
     Parameters
     ----------
     config:
-        Optional configuration overrides.  Recognised keys:
+        Optional configuration.  Accepts either a :class:`MarketSelectorConfig`
+        instance or a plain ``dict`` with the same keys (for backward
+        compatibility).  Recognised dict keys:
 
         ``min_score_to_run`` (float, default ``0.35``)
             Minimum per-asset-class score required for that asset class to be
@@ -167,19 +302,19 @@ class MarketSelector:
             :attr:`MarketSelectorDecision.top_crypto_records`.
     """
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        cfg = config or {}
-        self._min_score: float = float(cfg.get("min_score_to_run", 0.35))
-        self._both_threshold: float = float(cfg.get("both_threshold", 0.60))
-        self._half_life_hours: float = float(cfg.get("half_life_hours", 6.0))
-        self._top_n: int = int(cfg.get("top_n", 5))
+    def __init__(
+        self,
+        config: MarketSelectorConfig | dict[str, Any] | None = None,
+    ) -> None:
+        if isinstance(config, MarketSelectorConfig):
+            cfg_obj = config
+        else:
+            cfg_obj = MarketSelectorConfig.from_dict(config or {})
 
-        if self._half_life_hours <= 0.0:
-            raise ValueError(
-                f"half_life_hours must be > 0, got {self._half_life_hours!r}"
-            )
-        if self._top_n < 0:
-            raise ValueError(f"top_n must be >= 0, got {self._top_n!r}")
+        self._min_score: float = cfg_obj.min_score_to_run
+        self._both_threshold: float = cfg_obj.both_threshold
+        self._half_life_hours: float = cfg_obj.half_life_hours
+        self._top_n: int = cfg_obj.top_n
 
         # Pre-compute decay constant
         self._lambda: float = math.log(2.0) / self._half_life_hours
@@ -202,8 +337,7 @@ class MarketSelector:
             Provider-agnostic news intelligence records.  May be empty.
         regime_label:
             Optional market regime string, e.g. ``"PANIC"``, ``"RISK_OFF"``,
-            ``"EVENT_DRIVEN"``.  Case-sensitive (upper-case convention from
-            V2 ``regime_engine.py``).  Unknown values are treated as neutral.
+            ``"EVENT_DRIVEN"``.  Case-insensitive; unknown values are neutral.
 
         Returns
         -------
@@ -225,6 +359,7 @@ class MarketSelector:
         regime_upper = regime_label.upper()
         regime_vetoed = regime_upper in _VETO_REGIMES
         multiplier = _REGIME_MULTIPLIERS.get(regime_upper, 1.0)
+        risk_off_penalty_applied = regime_upper == "RISK_OFF"
 
         equity_score = min(equity_score_raw * multiplier, 1.0)
         crypto_score = min(crypto_score_raw * multiplier, 1.0)
@@ -260,12 +395,35 @@ class MarketSelector:
             record_count=len(records),
             regime_label=regime_label,
             regime_vetoed=regime_vetoed,
+            risk_off_penalty_applied=risk_off_penalty_applied,
             threshold_used=self._min_score,
             both_threshold_used=self._both_threshold,
             rationale=rationale,
             scored_at=scored_at,
             top_equity_records=top_equity,
             top_crypto_records=top_crypto,
+        )
+
+    def score_input(self, selector_input: MarketSelectorInput) -> MarketSelectorDecision:
+        """Score a :class:`MarketSelectorInput` bundle and return a routing decision.
+
+        Convenience wrapper around :meth:`score` that accepts the typed input
+        model directly.
+
+        Parameters
+        ----------
+        selector_input:
+            Typed input bundle containing records and regime label.
+
+        Returns
+        -------
+        MarketSelectorDecision
+            A fully populated decision with scores, route, rationale, and
+            contributing records.
+        """
+        return self.score(
+            selector_input.records,
+            regime_label=selector_input.regime_label,
         )
 
     # ------------------------------------------------------------------
@@ -296,8 +454,12 @@ class MarketSelector:
             return 1.0
 
     def _affinity(self, event_type: str, asset_class: str) -> float:
-        """Return the asset-class affinity multiplier for *event_type*."""
-        entry = EVENT_ASSET_AFFINITY.get(event_type, _DEFAULT_AFFINITY)
+        """Return the asset-class affinity multiplier for *event_type*.
+
+        Event type lookup is case-insensitive; values are lowercased before
+        table lookup so both ``"EARNINGS"`` and ``"earnings"`` work correctly.
+        """
+        entry = EVENT_ASSET_AFFINITY.get(event_type.lower(), _DEFAULT_AFFINITY)
         return entry.get(asset_class, 0.5)
 
     def _score_records(
@@ -319,7 +481,10 @@ class MarketSelector:
 
         Scoring formula (per record):
             ``w_i = recency(timestamp_i) * impact_score_i
-                    * affinity(event_type_i, asset_class) * confidence_i``
+                    * affinity(event_type_i, asset_class) * confidence_i
+                    * sentiment_factor_i``
+
+            where ``sentiment_factor = 0.5 + 0.5 * abs(sentiment_score)``
 
             ``score = sum(w_i) / max(N, 1)``  clipped to ``[0.0, 1.0]``
         """
@@ -328,11 +493,13 @@ class MarketSelector:
 
         weights: list[float] = []
         for rec in records:
+            sentiment_factor = 0.5 + 0.5 * abs(rec.sentiment_score)
             w = (
                 self._recency_weight(rec.timestamp)
                 * rec.impact_score
                 * self._affinity(rec.event_type, asset_class)
                 * rec.confidence
+                * sentiment_factor
             )
             weights.append(w)
 

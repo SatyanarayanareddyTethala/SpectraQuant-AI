@@ -13,12 +13,20 @@ Covers:
 * MarketSelectorDecision.route is a valid MarketRoute value
 * Event-type affinity correctness (earnings → equity, listing → crypto)
 * No dependence on provider-specific fields
+* JSON serialization compatibility (to_dict / from_dict)
+* MarketSelectorConfig typed dataclass
+* MarketSelectorInput typed dataclass
+* Extended affinity table (guidance, dividend, analyst, protocol_upgrade, etc.)
+* Sentiment factor contribution to scoring
+* risk_off_penalty_applied flag
+* score_input() convenience method
 
 All tests are self-contained: no network calls, no file-system side-effects.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -28,7 +36,9 @@ from spectraquant_v3.core.news_schema import NewsIntelligenceRecord
 from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
     MarketSelector,
+    MarketSelectorConfig,
     MarketSelectorDecision,
+    MarketSelectorInput,
     ScoredRecord,
 )
 
@@ -495,3 +505,342 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+# ===========================================================================
+# MarketSelectorConfig typed dataclass tests
+# ===========================================================================
+
+
+class TestMarketSelectorConfig:
+    """Verify the typed MarketSelectorConfig dataclass."""
+
+    def test_default_values(self) -> None:
+        cfg = MarketSelectorConfig()
+        assert cfg.min_score_to_run == 0.35
+        assert cfg.both_threshold == 0.60
+        assert cfg.half_life_hours == 6.0
+        assert cfg.top_n == 5
+
+    def test_custom_values(self) -> None:
+        cfg = MarketSelectorConfig(
+            min_score_to_run=0.20,
+            both_threshold=0.70,
+            half_life_hours=12.0,
+            top_n=3,
+        )
+        assert cfg.min_score_to_run == 0.20
+        assert cfg.both_threshold == 0.70
+        assert cfg.half_life_hours == 12.0
+        assert cfg.top_n == 3
+
+    def test_invalid_half_life_raises(self) -> None:
+        with pytest.raises(ValueError, match="half_life_hours"):
+            MarketSelectorConfig(half_life_hours=0.0)
+
+    def test_invalid_top_n_raises(self) -> None:
+        with pytest.raises(ValueError, match="top_n"):
+            MarketSelectorConfig(top_n=-1)
+
+    def test_from_dict(self) -> None:
+        cfg = MarketSelectorConfig.from_dict(
+            {"min_score_to_run": 0.25, "both_threshold": 0.75}
+        )
+        assert cfg.min_score_to_run == 0.25
+        assert cfg.both_threshold == 0.75
+        # Unspecified fields default
+        assert cfg.half_life_hours == 6.0
+        assert cfg.top_n == 5
+
+    def test_to_dict_roundtrip(self) -> None:
+        cfg = MarketSelectorConfig(min_score_to_run=0.28, both_threshold=0.65)
+        d = cfg.to_dict()
+        assert d["min_score_to_run"] == 0.28
+        assert d["both_threshold"] == 0.65
+        restored = MarketSelectorConfig.from_dict(d)
+        assert restored.min_score_to_run == cfg.min_score_to_run
+        assert restored.both_threshold == cfg.both_threshold
+
+    def test_selector_accepts_config_object(self) -> None:
+        """MarketSelector accepts a MarketSelectorConfig instance."""
+        cfg = MarketSelectorConfig(min_score_to_run=0.25, both_threshold=0.70)
+        sel = MarketSelector(config=cfg)
+        decision = sel.score([])
+        assert decision.threshold_used == 0.25
+        assert decision.both_threshold_used == 0.70
+
+    def test_selector_config_matches_dict_config(self) -> None:
+        """Typed config and equivalent dict config produce the same thresholds."""
+        cfg = MarketSelectorConfig(min_score_to_run=0.30, both_threshold=0.65)
+        sel_typed = MarketSelector(config=cfg)
+        sel_dict = MarketSelector(config={"min_score_to_run": 0.30, "both_threshold": 0.65})
+        records = [_equity(impact_score=0.8, confidence=0.8)]
+        d_typed = sel_typed.score(records)
+        d_dict = sel_dict.score(records)
+        assert d_typed.route == d_dict.route
+        assert d_typed.equity_score == pytest.approx(d_dict.equity_score, rel=1e-9)
+
+
+# ===========================================================================
+# MarketSelectorInput typed dataclass tests
+# ===========================================================================
+
+
+class TestMarketSelectorInput:
+    """Verify the typed MarketSelectorInput dataclass."""
+
+    def test_default_values(self) -> None:
+        si = MarketSelectorInput()
+        assert si.records == []
+        assert si.regime_label == "UNKNOWN"
+        assert si.as_of_utc == ""
+
+    def test_custom_values(self) -> None:
+        records = [_equity()]
+        si = MarketSelectorInput(
+            records=records,
+            regime_label="RISK_OFF",
+            as_of_utc="2026-03-11T09:00:00Z",
+        )
+        assert si.records == records
+        assert si.regime_label == "RISK_OFF"
+        assert si.as_of_utc == "2026-03-11T09:00:00Z"
+
+    def test_to_dict_structure(self) -> None:
+        si = MarketSelectorInput(
+            records=[_equity()],
+            regime_label="NORMAL",
+            as_of_utc="2026-03-11T09:00:00Z",
+        )
+        d = si.to_dict()
+        assert "records" in d
+        assert isinstance(d["records"], list)
+        assert len(d["records"]) == 1
+        assert d["regime_label"] == "NORMAL"
+        assert d["as_of_utc"] == "2026-03-11T09:00:00Z"
+
+    def test_score_input_matches_score(self) -> None:
+        """score_input() with MarketSelectorInput matches score() directly."""
+        sel = MarketSelector()
+        records = [_equity(impact_score=0.9, confidence=0.9) for _ in range(3)]
+        direct = sel.score(records, regime_label="RISK_OFF")
+        via_input = sel.score_input(
+            MarketSelectorInput(records=records, regime_label="RISK_OFF")
+        )
+        assert direct.route == via_input.route
+        assert direct.equity_score == pytest.approx(via_input.equity_score, rel=1e-9)
+
+    def test_score_input_empty(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score_input(MarketSelectorInput())
+        assert decision.route == MarketRoute.RUN_NONE
+
+    def test_score_input_panic(self) -> None:
+        sel = MarketSelector()
+        strong = [_equity(impact_score=1.0, confidence=1.0) for _ in range(5)]
+        decision = sel.score_input(
+            MarketSelectorInput(records=strong, regime_label="PANIC")
+        )
+        assert decision.route == MarketRoute.RUN_NONE
+        assert decision.regime_vetoed is True
+
+
+# ===========================================================================
+# JSON serialization tests
+# ===========================================================================
+
+
+class TestJSONSerialization:
+    """Verify JSON-compatible serialization of MarketSelectorDecision."""
+
+    def test_to_dict_returns_dict(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()])
+        d = decision.to_dict()
+        assert isinstance(d, dict)
+
+    def test_to_dict_route_is_string(self) -> None:
+        """route in to_dict must be a string, not a MarketRoute enum."""
+        sel = MarketSelector()
+        decision = sel.score([_equity()])
+        d = decision.to_dict()
+        assert isinstance(d["route"], str)
+        assert d["route"] in {r.value for r in MarketRoute}
+
+    def test_to_dict_json_serializable(self) -> None:
+        """to_dict output must be fully JSON-serializable."""
+        sel = MarketSelector()
+        records = [_equity(), _crypto()]
+        decision = sel.score(records, regime_label="RISK_OFF")
+        d = decision.to_dict()
+        # Must not raise
+        json_str = json.dumps(d)
+        assert len(json_str) > 0
+
+    def test_to_dict_all_required_fields_present(self) -> None:
+        required = {
+            "route", "equity_score", "crypto_score", "equity_record_count",
+            "crypto_record_count", "record_count", "regime_label",
+            "regime_vetoed", "risk_off_penalty_applied", "threshold_used",
+            "both_threshold_used", "rationale", "scored_at",
+            "top_equity_records", "top_crypto_records", "version",
+        }
+        sel = MarketSelector()
+        d = sel.score([_equity()]).to_dict()
+        assert required.issubset(set(d.keys()))
+
+    def test_to_dict_version_is_v1(self) -> None:
+        sel = MarketSelector()
+        d = sel.score([]).to_dict()
+        assert d["version"] == "v1"
+
+    def test_to_dict_top_records_serialized(self) -> None:
+        sel = MarketSelector()
+        records = [_equity()]
+        d = sel.score(records).to_dict()
+        assert isinstance(d["top_equity_records"], list)
+        if d["top_equity_records"]:
+            rec = d["top_equity_records"][0]
+            assert "canonical_symbol" in rec
+            assert "event_type" in rec
+            assert "asset" in rec
+            assert "raw_weight" in rec
+
+    def test_scored_record_to_dict(self) -> None:
+        sr = ScoredRecord(
+            canonical_symbol="BTC",
+            event_type="listing",
+            asset="crypto",
+            raw_weight=0.72345,
+        )
+        d = sr.to_dict()
+        assert d["canonical_symbol"] == "BTC"
+        assert d["event_type"] == "listing"
+        assert d["asset"] == "crypto"
+        assert d["raw_weight"] == 0.72345
+
+    def test_risk_off_penalty_flag_in_dict(self) -> None:
+        sel = MarketSelector()
+        d_risk = sel.score([_equity()], regime_label="RISK_OFF").to_dict()
+        d_normal = sel.score([_equity()], regime_label="UNKNOWN").to_dict()
+        assert d_risk["risk_off_penalty_applied"] is True
+        assert d_normal["risk_off_penalty_applied"] is False
+
+
+# ===========================================================================
+# Extended affinity table tests
+# ===========================================================================
+
+
+class TestExtendedAffinityTable:
+    """Verify the extended event-type affinity table entries from the spec."""
+
+    def test_guidance_is_equity_dominant(self) -> None:
+        assert EVENT_ASSET_AFFINITY["guidance"]["equity"] >= 0.90
+        assert EVENT_ASSET_AFFINITY["guidance"]["crypto"] <= 0.10
+
+    def test_dividend_is_equity_only(self) -> None:
+        assert EVENT_ASSET_AFFINITY["dividend"]["equity"] >= 0.80
+        assert EVENT_ASSET_AFFINITY["dividend"]["crypto"] == 0.0
+
+    def test_analyst_is_equity_leaning(self) -> None:
+        assert EVENT_ASSET_AFFINITY["analyst"]["equity"] >= 0.70
+        assert EVENT_ASSET_AFFINITY["analyst"]["equity"] > EVENT_ASSET_AFFINITY["analyst"]["crypto"]
+
+    def test_protocol_upgrade_is_crypto_dominant(self) -> None:
+        assert EVENT_ASSET_AFFINITY["protocol_upgrade"]["crypto"] >= 0.90
+        assert EVENT_ASSET_AFFINITY["protocol_upgrade"]["equity"] <= 0.10
+
+    def test_exchange_hack_is_crypto_only(self) -> None:
+        assert EVENT_ASSET_AFFINITY["exchange_hack"]["crypto"] == 1.0
+        assert EVENT_ASSET_AFFINITY["exchange_hack"]["equity"] == 0.0
+
+    def test_onchain_is_crypto_dominant(self) -> None:
+        assert EVENT_ASSET_AFFINITY["onchain"]["crypto"] >= 0.90
+        assert EVENT_ASSET_AFFINITY["onchain"]["equity"] == 0.0
+
+    def test_sector_theme_is_cross_asset(self) -> None:
+        """sector_theme has meaningful affinity for both asset classes."""
+        assert EVENT_ASSET_AFFINITY["sector_theme"]["equity"] >= 0.60
+        assert EVENT_ASSET_AFFINITY["sector_theme"]["crypto"] >= 0.50
+
+    def test_social_buzz_is_crypto_leaning(self) -> None:
+        assert EVENT_ASSET_AFFINITY["social_buzz"]["crypto"] > EVENT_ASSET_AFFINITY["social_buzz"]["equity"]
+
+    def test_affinity_table_covers_all_spec_entries(self) -> None:
+        """All event types from the design spec must be present in the table."""
+        required_entries = {
+            "earnings", "guidance", "m_and_a", "dividend", "analyst",
+            "macro", "regulatory", "protocol_upgrade", "exchange_hack",
+            "onchain", "sector_theme", "social_buzz",
+        }
+        assert required_entries.issubset(set(EVENT_ASSET_AFFINITY.keys()))
+
+    def test_affinity_case_insensitive_via_selector(self) -> None:
+        """Event type lookup is case-insensitive (uppercase input works)."""
+        sel = MarketSelector()
+        rec_lower = _rec(asset="equity", event_type="earnings")
+        rec_upper = _rec(asset="equity", event_type="EARNINGS")
+        score_lower = sel.score([rec_lower]).equity_score
+        score_upper = sel.score([rec_upper]).equity_score
+        assert score_lower == pytest.approx(score_upper, rel=1e-9)
+
+
+# ===========================================================================
+# Sentiment factor tests
+# ===========================================================================
+
+
+class TestSentimentFactor:
+    """Verify that sentiment magnitude modulates the scoring."""
+
+    def test_zero_sentiment_reduces_score(self) -> None:
+        """A record with zero sentiment scores lower than one with high sentiment."""
+        sel = MarketSelector()
+        rec_high = _equity(sentiment_score=1.0, impact_score=0.8, confidence=0.8)
+        rec_zero = _equity(sentiment_score=0.0, impact_score=0.8, confidence=0.8)
+        score_high = sel.score([rec_high]).equity_score
+        score_zero = sel.score([rec_zero]).equity_score
+        assert score_high > score_zero
+
+    def test_positive_and_negative_equal_magnitude_same_score(self) -> None:
+        """Positive and negative sentiment of same magnitude produce the same score."""
+        sel = MarketSelector()
+        rec_pos = _equity(sentiment_score=0.6, impact_score=0.7, confidence=0.7)
+        rec_neg = _equity(sentiment_score=-0.6, impact_score=0.7, confidence=0.7)
+        score_pos = sel.score([rec_pos]).equity_score
+        score_neg = sel.score([rec_neg]).equity_score
+        assert score_pos == pytest.approx(score_neg, rel=1e-9)
+
+    def test_sentiment_factor_bounds(self) -> None:
+        """sentiment_factor is in [0.5, 1.0] so it only reduces scores, never exceeds base."""
+        # At sentiment=0 factor=0.5; at sentiment=1 factor=1.0
+        sel = MarketSelector()
+        rec_zero_sent = _equity(sentiment_score=0.0, impact_score=0.9, confidence=0.9)
+        rec_full_sent = _equity(sentiment_score=1.0, impact_score=0.9, confidence=0.9)
+        s_zero = sel.score([rec_zero_sent]).equity_score
+        s_full = sel.score([rec_full_sent]).equity_score
+        # ratio should be approximately 0.5 / 1.0 = 0.5
+        assert abs(s_zero / s_full - 0.5) < 1e-6
+
+
+# ===========================================================================
+# risk_off_penalty_applied flag tests
+# ===========================================================================
+
+
+class TestRiskOffPenaltyFlag:
+    """Verify the risk_off_penalty_applied veto flag."""
+
+    def test_risk_off_sets_flag(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()], regime_label="RISK_OFF")
+        assert decision.risk_off_penalty_applied is True
+
+    def test_other_regimes_do_not_set_flag(self) -> None:
+        sel = MarketSelector()
+        for regime in ("UNKNOWN", "NORMAL", "EVENT_DRIVEN", "PANIC"):
+            decision = sel.score([_equity()], regime_label=regime)
+            assert decision.risk_off_penalty_applied is False, (
+                f"Expected risk_off_penalty_applied=False for regime={regime!r}"
+            )
