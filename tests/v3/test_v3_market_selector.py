@@ -37,7 +37,7 @@ from spectraquant_v3.intelligence.market_selector import (
 # Helpers
 # ===========================================================================
 
-# Use a fixed recent timestamp so recency decay is ~1.0 for all records.
+# Use a fixed far-future timestamp so recency decay is ~1.0 for all records.
 # This isolates the scoring logic from wall-clock time.
 _FRESH_TS = "2099-01-01T00:00:00+00:00"
 
