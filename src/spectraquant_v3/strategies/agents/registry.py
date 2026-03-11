@@ -113,7 +113,7 @@ class AgentRegistry:
             An agent instance.
         """
         agent_cls = cls.get(name)
-        if hasattr(agent_cls, "from_config"):
+        if hasattr(agent_cls, "from_config") and callable(agent_cls.from_config):
             return agent_cls.from_config(cfg, run_id=run_id)
         return agent_cls(run_id=run_id)
 

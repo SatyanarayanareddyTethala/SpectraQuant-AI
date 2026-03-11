@@ -53,7 +53,7 @@ def _error_row_for(
 
     # Horizon is required to be non-empty; use the agent attribute when
     # available, otherwise fall back to a non-empty sentinel.
-   _raw_horizon = getattr(agent, "horizon", None)
+    _raw_horizon = getattr(agent, "horizon", None)
     horizon = str(_raw_horizon) if _raw_horizon else "unknown"
 
     return SignalRow(

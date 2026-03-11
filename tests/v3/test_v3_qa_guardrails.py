@@ -448,3 +448,88 @@ class TestBacktestEngineEquityAgentDispatch:
         # Steps may be 0 if data is insufficient for the given freq/periods,
         # but the run must not raise.
         assert results.n_steps >= 0
+
+
+# ===========================================================================
+# 5. AgentRegistry.build_from_config callable guard
+# ===========================================================================
+
+
+class TestAgentRegistryBuildFromConfig:
+    """build_from_config must only call from_config when it is a real callable.
+
+    A class-level attribute named 'from_config' that is not callable (e.g. a
+    plain string or integer set by mistake) must not be invoked; the method
+    should fall back to the bare constructor.
+    """
+
+    def teardown_method(self, method) -> None:
+        from spectraquant_v3.strategies.agents.registry import AgentRegistry
+
+        AgentRegistry.unregister("_test_no_from_config")
+        AgentRegistry.unregister("_test_noncallable_from_config")
+        AgentRegistry.unregister("_test_callable_from_config")
+
+    def test_agent_without_from_config_uses_constructor(self) -> None:
+        from spectraquant_v3.strategies.agents.registry import AgentRegistry
+
+        class _AgentNoConfig:
+            def __init__(self, run_id: str = "default") -> None:
+                self.run_id = run_id
+
+        AgentRegistry.register("_test_no_from_config", _AgentNoConfig)
+        inst = AgentRegistry.build_from_config(
+            "_test_no_from_config", {}, run_id="my_run"
+        )
+        assert isinstance(inst, _AgentNoConfig)
+        assert inst.run_id == "my_run"
+
+    def test_agent_with_noncallable_from_config_falls_back_to_constructor(
+        self,
+    ) -> None:
+        """When from_config is an attribute but not callable, the constructor
+        must be used instead of raising TypeError."""
+        from spectraquant_v3.strategies.agents.registry import AgentRegistry
+
+        class _AgentBadFromConfig:
+            from_config = "not_a_callable"  # attribute, not a method
+
+            def __init__(self, run_id: str = "default") -> None:
+                self.run_id = run_id
+
+        AgentRegistry.register("_test_noncallable_from_config", _AgentBadFromConfig)
+        # Must not raise even though from_config exists but is not callable
+        inst = AgentRegistry.build_from_config(
+            "_test_noncallable_from_config", {}, run_id="safe_run"
+        )
+        assert isinstance(inst, _AgentBadFromConfig)
+        assert inst.run_id == "safe_run"
+
+    def test_agent_with_callable_from_config_is_used(self) -> None:
+        from spectraquant_v3.strategies.agents.registry import AgentRegistry
+
+        class _AgentGoodFromConfig:
+            def __init__(self, run_id: str = "default", source: str = "constructor") -> None:
+                self.run_id = run_id
+                self.source = source
+
+            @classmethod
+            def from_config(cls, cfg: dict, run_id: str = "default") -> "_AgentGoodFromConfig":
+                obj = cls.__new__(cls)
+                obj.run_id = run_id
+                obj.source = "from_config"
+                return obj
+
+        AgentRegistry.register("_test_callable_from_config", _AgentGoodFromConfig)
+        inst = AgentRegistry.build_from_config(
+            "_test_callable_from_config", {}, run_id="cfg_run"
+        )
+        assert isinstance(inst, _AgentGoodFromConfig)
+        assert inst.source == "from_config"
+        assert inst.run_id == "cfg_run"
+
+    def test_unknown_agent_name_raises_key_error(self) -> None:
+        from spectraquant_v3.strategies.agents.registry import AgentRegistry
+
+        with pytest.raises(KeyError, match="_no_such_agent"):
+            AgentRegistry.build_from_config("_no_such_agent", {})
