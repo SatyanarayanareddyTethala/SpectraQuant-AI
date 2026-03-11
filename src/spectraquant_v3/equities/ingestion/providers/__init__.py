@@ -5,7 +5,8 @@ wrappers — they handle transport and normalization only, and must never
 write to the cache or make run-mode decisions.
 """
 
-from spectraquant_v3.equities.ingestion.providers.yfinance_provider import YFinanceProvider
+from spectraquant_v3.equities.ingestion.providers.perplexity_provider import PerplexityNewsProvider
 from spectraquant_v3.equities.ingestion.providers.rss_provider import RSSProvider
+from spectraquant_v3.equities.ingestion.providers.yfinance_provider import YFinanceProvider
 
-__all__ = ["YFinanceProvider", "RSSProvider"]
+__all__ = ["YFinanceProvider", "RSSProvider", "PerplexityNewsProvider"]

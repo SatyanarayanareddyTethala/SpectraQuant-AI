@@ -42,6 +42,7 @@ from spectraquant_v3.crypto.ingestion.providers.cryptocompare_provider import (
 )
 from spectraquant_v3.crypto.ingestion.providers.cryptopanic_provider import CryptoPanicProvider
 from spectraquant_v3.crypto.ingestion.providers.glassnode_provider import GlassnodeProvider
+from spectraquant_v3.crypto.ingestion.providers.perplexity_provider import PerplexityNewsProvider
 
 __all__ = [
     "CcxtProvider",
@@ -51,4 +52,5 @@ __all__ = [
     "GlassnodeProvider",
     "BinanceFuturesProvider",
     "BybitProvider",
+    "PerplexityNewsProvider",
 ]
