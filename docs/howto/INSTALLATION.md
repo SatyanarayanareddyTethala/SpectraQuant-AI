@@ -702,7 +702,7 @@ cat config.yaml
 ```bash
 # Make sure virtual environment is activated
 source .venv/bin/activate  # Linux/macOS
-.venv\Scripts\activate     # Windows
+.venv\Scripts\activate.bat     # Windows (Command Prompt)
 
 # Reinstall package
 pip install -e .

@@ -591,3 +591,140 @@ class TestSchemaModuleExports:
 
         schema_mod = importlib.import_module("spectraquant_v3.core.schema")
         assert hasattr(schema_mod, "NoSignalReason")
+
+
+# ---------------------------------------------------------------------------
+# _error_row_for — robustness follow-up tests
+# ---------------------------------------------------------------------------
+
+
+class _NakedAgent:
+    """Agent with no asset_class, no horizon, and no agent_id attributes."""
+
+    run_id = "run_naked"
+
+    def evaluate(self, symbol: str, frame, as_of: str):
+        raise RuntimeError("naked agent failure")
+
+
+class _EmptyStringAttributeAgent:
+    """Agent with empty-string asset_class and horizon (fragile prior behaviour)."""
+
+    run_id = "run_empty"
+    asset_class = ""  # empty string — should not propagate to error row
+    horizon = ""  # empty string — should not propagate to error row
+    agent_id = "empty_attr_agent"
+
+    def evaluate(self, symbol: str, frame, as_of: str):
+        raise ValueError("empty-attr agent failure")
+
+
+class _CryptoNamedAgent:
+    """Agent with agent_id starting with 'crypto_' but no explicit asset_class."""
+
+    run_id = "run_cn"
+    agent_id = "crypto_test_agent"
+    # no asset_class attribute — should be inferred from agent_id prefix
+
+    def evaluate(self, symbol: str, frame, as_of: str):
+        raise RuntimeError("crypto named agent failure")
+
+
+class _EquityNamedAgent:
+    """Agent with agent_id starting with 'equity_' but no explicit asset_class."""
+
+    run_id = "run_en"
+    agent_id = "equity_test_agent"
+    # no asset_class attribute — should be inferred from agent_id prefix
+
+    def evaluate(self, symbol: str, frame, as_of: str):
+        raise RuntimeError("equity named agent failure")
+
+
+class TestErrorRowFallbacks:
+    """Regression tests for _error_row_for non-blank asset_class / horizon.
+
+    Covers the robustness fix: error rows emitted for agents that do not have
+    asset_class / horizon attributes must never have empty required fields.
+    """
+
+    def _fm(self, symbol: str = "BTC") -> dict:
+        import pandas as pd
+
+        return {symbol: pd.DataFrame({"close": [100.0]})}
+
+    def test_naked_agent_error_row_has_non_empty_asset_class(self) -> None:
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(_NakedAgent(), self._fm(), as_of="2025-01-01T00:00:00+00:00")
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.status == "ERROR"
+        assert row.asset_class != "", "asset_class must never be empty on an error row"
+
+    def test_naked_agent_error_row_has_non_empty_horizon(self) -> None:
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(_NakedAgent(), self._fm(), as_of="2025-01-01T00:00:00+00:00")
+        row = rows[0]
+        assert row.horizon != "", "horizon must never be empty on an error row"
+
+    def test_naked_agent_error_row_fallbacks_to_unknown(self) -> None:
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(_NakedAgent(), self._fm(), as_of="2025-01-01T00:00:00+00:00")
+        row = rows[0]
+        assert row.asset_class == "unknown"
+        assert row.horizon == "unknown"
+
+    def test_empty_string_asset_class_is_replaced_with_unknown(self) -> None:
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(
+            _EmptyStringAttributeAgent(), self._fm(), as_of="2025-01-01T00:00:00+00:00"
+        )
+        row = rows[0]
+        assert row.status == "ERROR"
+        assert row.asset_class == "unknown", (
+            "empty-string asset_class must be replaced with 'unknown', got: "
+            f"{row.asset_class!r}"
+        )
+        assert row.horizon == "unknown", (
+            "empty-string horizon must be replaced with 'unknown', got: "
+            f"{row.horizon!r}"
+        )
+
+    def test_crypto_named_agent_asset_class_inferred(self) -> None:
+        """agent_id prefix 'crypto_' → asset_class inferred as 'crypto'."""
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(
+            _CryptoNamedAgent(), self._fm("BTC"), as_of="2025-01-01T00:00:00+00:00"
+        )
+        row = rows[0]
+        assert row.status == "ERROR"
+        assert row.asset_class == "crypto"
+
+    def test_equity_named_agent_asset_class_inferred(self) -> None:
+        """agent_id prefix 'equity_' → asset_class inferred as 'equity'."""
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(
+            _EquityNamedAgent(),
+            {"INFY.NS": __import__("pandas").DataFrame({"close": [100.0]})},
+            as_of="2025-01-01T00:00:00+00:00",
+        )
+        row = rows[0]
+        assert row.status == "ERROR"
+        assert row.asset_class == "equity"
+
+    def test_error_row_canonical_symbol_always_set(self) -> None:
+        """The canonical_symbol in the error row must match the symbol from feature_map."""
+        from spectraquant_v3.strategies.agents.runner import run_signal_agent
+
+        rows = run_signal_agent(
+            _NakedAgent(),
+            self._fm("SPECIAL_SYM"),
+            as_of="2025-01-01T00:00:00+00:00",
+        )
+        assert rows[0].canonical_symbol == "SPECIAL_SYM"
