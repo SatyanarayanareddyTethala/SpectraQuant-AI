@@ -144,3 +144,44 @@ class NewsIntelligenceStore:
         if not path.exists():
             return pd.DataFrame()
         return pd.read_parquet(path)
+
+    # ------------------------------------------------------------------
+    # Feature generation convenience methods
+    # ------------------------------------------------------------------
+
+    def build_news_feature_map(
+        self,
+        symbols: list[str],
+        *,
+        as_of_date: str | pd.Timestamp | None = None,
+        recency_halflife_days: float = 3.0,
+    ) -> "dict[str, pd.DataFrame]":
+        """Build a ``news_feature_map`` dict ready for
+        :class:`~spectraquant_v3.backtest.engine.BacktestEngine`.
+
+        Iterates over *symbols*, reads each symbol's cached records, and
+        calls :func:`~spectraquant_v3.core.news_intel_features.build_daily_features`
+        to produce a daily feature DataFrame.
+
+        Args:
+            symbols:              List of canonical tickers to include.
+            as_of_date:           Upper-bound for point-in-time safety.
+                                  Passed directly to ``build_daily_features``.
+            recency_halflife_days: Half-life for EWM recency weighting.
+
+        Returns:
+            Dict mapping canonical symbol (upper-case) → daily feature
+            DataFrame.  Symbols with no cached records are mapped to empty
+            DataFrames so callers can iterate without ``KeyError``.
+        """
+        from spectraquant_v3.core.news_intel_features import build_daily_features  # noqa: PLC0415
+
+        result: dict[str, pd.DataFrame] = {}
+        for sym in symbols:
+            records = self.read_records(sym.upper())
+            result[sym.upper()] = build_daily_features(
+                records,
+                as_of_date=as_of_date,
+                recency_halflife_days=recency_halflife_days,
+            )
+        return result
