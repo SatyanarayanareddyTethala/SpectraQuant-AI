@@ -29,6 +29,7 @@ from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
     MarketSelector,
     MarketSelectorDecision,
+    MarketSelectorInput,
     ScoredRecord,
 )
 
@@ -495,3 +496,40 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+class TestSerializationAndInputAdapter:
+    def test_score_input_adapter_matches_score(self) -> None:
+        sel = MarketSelector()
+        records = [_equity(), _crypto()]
+        direct = sel.score(records, regime_label="EVENT_DRIVEN")
+        wrapped = sel.score_input(
+            MarketSelectorInput(records=records, regime_label="EVENT_DRIVEN")
+        )
+        assert wrapped.route == direct.route
+        assert wrapped.equity_score == direct.equity_score
+        assert wrapped.crypto_score == direct.crypto_score
+
+    def test_decision_to_dict_has_stable_contract_key_order(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()])
+        payload = decision.to_dict()
+        assert list(payload.keys()) == [
+            "as_of_utc",
+            "decision",
+            "scores",
+            "thresholds",
+            "regimes",
+            "veto_flags",
+            "rationale",
+            "version",
+        ]
+
+    def test_decision_round_trip_from_dict(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()], regime_label="RISK_OFF")
+        round_trip = MarketSelectorDecision.from_dict(decision.to_dict())
+        assert round_trip.route == decision.route
+        assert round_trip.equity_score == decision.equity_score
+        assert round_trip.crypto_score == decision.crypto_score
+        assert round_trip.version == "v1"
