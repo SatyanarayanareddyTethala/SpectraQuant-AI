@@ -29,6 +29,7 @@ from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
     MarketSelector,
     MarketSelectorDecision,
+    MarketSelectorInput,
     ScoredRecord,
 )
 
@@ -495,3 +496,89 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+# ===========================================================================
+# Serialization contract tests
+# ===========================================================================
+
+
+class TestSerializationContracts:
+    """Validate deterministic payloads for API contract stability."""
+
+    def test_input_from_dict_to_dict_round_trip(self) -> None:
+        payload = {
+            "version": "v1",
+            "as_of_utc": "2025-01-01T00:00:00+00:00",
+            "regime_label": "UNKNOWN",
+            "records": [
+                _equity().to_dict(),
+                _crypto().to_dict(),
+            ],
+        }
+        parsed = MarketSelectorInput.from_dict(payload)
+        assert parsed.to_dict() == payload
+
+    def test_decision_to_dict_has_required_sections_and_version(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity(), _crypto()], as_of_utc="2025-01-01T00:00:00+00:00")
+        out = decision.to_dict()
+
+        assert out["version"] == "v1"
+        for key in ("scores", "thresholds", "regimes", "veto_flags", "rationale"):
+            assert key in out
+
+    def test_decision_to_dict_is_deterministic_for_same_as_of_and_events(self) -> None:
+        as_of = "2025-01-01T00:00:00+00:00"
+        records = [_equity(impact_score=0.8, confidence=0.9), _crypto(impact_score=0.7, confidence=0.8)]
+        sel = MarketSelector()
+
+        first = sel.score(records, regime_label="UNKNOWN", as_of_utc=as_of).to_dict()
+        second = sel.score(records, regime_label="UNKNOWN", as_of_utc=as_of).to_dict()
+
+        assert first == second
+
+    @pytest.mark.parametrize(
+        "records, regime_label, expected_route",
+        [
+            ([], "UNKNOWN", MarketRoute.RUN_NONE),
+            ([_equity(impact_score=0.9, confidence=0.9) for _ in range(5)], "UNKNOWN", MarketRoute.RUN_EQUITIES),
+            ([_crypto(impact_score=0.9, confidence=0.9) for _ in range(5)], "UNKNOWN", MarketRoute.RUN_CRYPTO),
+            (
+                [_equity(impact_score=0.95, confidence=0.95) for _ in range(5)]
+                + [_crypto(impact_score=0.95, confidence=0.95) for _ in range(5)],
+                "UNKNOWN",
+                MarketRoute.RUN_BOTH,
+            ),
+            (
+                [_equity(impact_score=0.05, confidence=0.05), _crypto(impact_score=0.05, confidence=0.05)],
+                "UNKNOWN",
+                MarketRoute.RUN_NONE,
+            ),
+            ([_equity(impact_score=1.0, confidence=1.0) for _ in range(5)], "PANIC", MarketRoute.RUN_NONE),
+            ([_equity(impact_score=0.7, confidence=0.57)], "RISK_OFF", MarketRoute.RUN_NONE),
+            ([_equity(provider="newsapi")], "UNKNOWN", MarketRoute.RUN_EQUITIES),
+        ],
+    )
+    def test_required_scenarios_produce_expected_routes(
+        self,
+        records: list[NewsIntelligenceRecord],
+        regime_label: str,
+        expected_route: MarketRoute,
+    ) -> None:
+        sel = MarketSelector()
+        decision = sel.score(records, regime_label=regime_label, as_of_utc="2025-01-01T00:00:00+00:00")
+        assert decision.route == expected_route
+
+    def test_event_driven_boost_scenario_increases_score(self) -> None:
+        sel = MarketSelector()
+        records = [_equity(impact_score=0.5, confidence=0.5)]
+        neutral = sel.score(records, regime_label="UNKNOWN", as_of_utc="2025-01-01T00:00:00+00:00")
+        boosted = sel.score(records, regime_label="EVENT_DRIVEN", as_of_utc="2025-01-01T00:00:00+00:00")
+        assert boosted.equity_score > neutral.equity_score
+
+    def test_unknown_event_type_fallback_scenario_scores_nonzero(self) -> None:
+        sel = MarketSelector()
+        records = [_rec(asset="equity", event_type="unknown_new_type", impact_score=0.8, confidence=0.8)]
+        decision = sel.score(records, regime_label="UNKNOWN", as_of_utc="2025-01-01T00:00:00+00:00")
+        assert decision.equity_score > 0.0

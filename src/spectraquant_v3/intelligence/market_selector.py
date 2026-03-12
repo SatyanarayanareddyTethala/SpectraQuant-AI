@@ -92,6 +92,43 @@ class ScoredRecord:
     raw_weight: float
     """Unscaled per-record contribution before normalisation."""
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return a deterministic serialisation for API responses."""
+        return {
+            "canonical_symbol": self.canonical_symbol,
+            "event_type": self.event_type,
+            "asset": self.asset,
+            "raw_weight": round(float(self.raw_weight), 6),
+        }
+
+
+@dataclass
+class MarketSelectorInput:
+    """Serializable input payload for market selector evaluation."""
+
+    records: list[NewsIntelligenceRecord]
+    regime_label: str = "UNKNOWN"
+    as_of_utc: str = ""
+    version: str = "v1"
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MarketSelectorInput":
+        records_raw = d.get("records", [])
+        return cls(
+            records=[NewsIntelligenceRecord(**r) for r in records_raw],
+            regime_label=str(d.get("regime_label", "UNKNOWN")),
+            as_of_utc=str(d.get("as_of_utc", "")),
+            version=str(d.get("version", "v1")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "as_of_utc": self.as_of_utc,
+            "regime_label": self.regime_label,
+            "records": [r.to_dict() for r in self.records],
+        }
+
 
 @dataclass
 class MarketSelectorDecision:
@@ -134,6 +171,40 @@ class MarketSelectorDecision:
     scored_at: str
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a deterministic serialisation structure."""
+        return {
+            "version": "v1",
+            "route": self.route.value,
+            "scores": {
+                "equity": self.equity_score,
+                "crypto": self.crypto_score,
+            },
+            "thresholds": {
+                "min_score_to_run": self.threshold_used,
+                "both_threshold": self.both_threshold_used,
+            },
+            "regimes": {
+                "label": self.regime_label,
+            },
+            "veto_flags": {
+                "regime_vetoed": self.regime_vetoed,
+            },
+            "rationale": {
+                "text": self.rationale,
+                "scored_at": self.scored_at,
+            },
+            "record_counts": {
+                "equity": self.equity_record_count,
+                "crypto": self.crypto_record_count,
+                "total": self.record_count,
+            },
+            "top_records": {
+                "equity": [r.to_dict() for r in self.top_equity_records],
+                "crypto": [r.to_dict() for r in self.top_crypto_records],
+            },
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +264,7 @@ class MarketSelector:
         records: list[NewsIntelligenceRecord],
         *,
         regime_label: str = "UNKNOWN",
+        as_of_utc: str = "",
     ) -> MarketSelectorDecision:
         """Score *records* and return a routing decision.
 
@@ -211,15 +283,22 @@ class MarketSelector:
             A fully populated decision with scores, route, rationale, and
             contributing records.
         """
-        scored_at = datetime.now(tz=timezone.utc).isoformat()
+        if as_of_utc:
+            scored_at = as_of_utc
+            now_utc = datetime.fromisoformat(as_of_utc.replace("Z", "+00:00"))
+            if now_utc.tzinfo is None:
+                now_utc = now_utc.replace(tzinfo=timezone.utc)
+        else:
+            now_utc = datetime.now(tz=timezone.utc)
+            scored_at = now_utc.isoformat()
 
         # 1. Partition by asset class
         equity_records = [r for r in records if r.asset == "equity"]
         crypto_records = [r for r in records if r.asset == "crypto"]
 
         # 2. Score each asset class
-        equity_weights, equity_score_raw = self._score_records(equity_records, "equity")
-        crypto_weights, crypto_score_raw = self._score_records(crypto_records, "crypto")
+        equity_weights, equity_score_raw = self._score_records(equity_records, "equity", now_utc)
+        crypto_weights, crypto_score_raw = self._score_records(crypto_records, "crypto", now_utc)
 
         # 3. Apply regime multipliers (before veto check)
         regime_upper = regime_label.upper()
@@ -272,7 +351,7 @@ class MarketSelector:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _recency_weight(self, timestamp: str) -> float:
+    def _recency_weight(self, timestamp: str, now: datetime) -> float:
         """Return exponential recency decay weight for an ISO-8601 timestamp.
 
         ``recency(t) = exp(-lambda * age_hours)``
@@ -284,7 +363,6 @@ class MarketSelector:
             event_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             if event_time.tzinfo is None:
                 event_time = event_time.replace(tzinfo=timezone.utc)
-            now = datetime.now(tz=timezone.utc)
             age_hours = max((now - event_time).total_seconds() / 3600.0, 0.0)
             return math.exp(-self._lambda * age_hours)
         except (ValueError, TypeError) as exc:
@@ -304,6 +382,7 @@ class MarketSelector:
         self,
         records: list[NewsIntelligenceRecord],
         asset_class: str,
+        now: datetime,
     ) -> tuple[list[float], float]:
         """Compute a weighted aggregate score for *records*.
 
@@ -329,7 +408,7 @@ class MarketSelector:
         weights: list[float] = []
         for rec in records:
             w = (
-                self._recency_weight(rec.timestamp)
+                self._recency_weight(rec.timestamp, now)
                 * rec.impact_score
                 * self._affinity(rec.event_type, asset_class)
                 * rec.confidence
