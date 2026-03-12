@@ -1,6 +1,9 @@
-# Documentation Index - SpectraQuant-AI-V2
+# Documentation Index — SpectraQuant-AI
 
-Central map for all documentation after refactor.
+Central map for all documentation.
+
+## Architecture
+- [docs/architecture/market_selector.md](docs/architecture/market_selector.md) — V3 deterministic market selector: input model, scoring logic, routing decision, rationale structure
 
 ## How-to guides
 - [docs/howto/GETTING_STARTED.md](docs/howto/GETTING_STARTED.md)
@@ -10,6 +13,7 @@ Central map for all documentation after refactor.
 - [docs/howto/README_INTELLIGENCE.md](docs/howto/README_INTELLIGENCE.md) ⚠️ *(archived — describes the inactive `trading_assistant/` application)*
 
 ## Design and architecture
+- [docs/design/V3_NEWS_MARKET_SELECTOR_AUDIT.md](docs/design/V3_NEWS_MARKET_SELECTOR_AUDIT.md) — V3 news market selector audit
 - [docs/design/ARCHITECTURE_REVIEW.md](docs/design/ARCHITECTURE_REVIEW.md) — Principal architecture review: V2 vs V3, execution flows, contract boundaries, duplication map, staged refactor plan
 - [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md)
 - [docs/design/SYSTEM_DESIGN.md](docs/design/SYSTEM_DESIGN.md)
