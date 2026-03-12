@@ -363,6 +363,15 @@ class TestAffinityAndSerialization:
 
         assert restored.decision == MarketRoute.RUN_NONE
 
+    def test_veto_flag_aliases_are_synchronized(self) -> None:
+        from_broad_flag = VetoFlags(risk_penalty_applied=True)
+        from_legacy_flag = VetoFlags(risk_off_penalty_applied=True)
+
+        assert from_broad_flag.risk_penalty_applied is True
+        assert from_broad_flag.risk_off_penalty_applied is True
+        assert from_legacy_flag.risk_penalty_applied is True
+        assert from_legacy_flag.risk_off_penalty_applied is True
+
     def test_input_round_trip_uses_contract_shape(self) -> None:
         selector_input = _selector_input(
             [
