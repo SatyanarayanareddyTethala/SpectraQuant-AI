@@ -327,7 +327,10 @@ class MarketSelector:
             return "UNKNOWN"
         if normalized in EVENT_ASSET_AFFINITY:
             return normalized
-        return _EVENT_TYPE_ALIASES.get(normalized, "UNKNOWN")
+        alias = _EVENT_TYPE_ALIASES.get(normalized)
+        if alias is not None and alias in EVENT_ASSET_AFFINITY:
+            return alias
+        return "UNKNOWN"
 
     def _affinity(self, event_type: str, asset_class: str) -> tuple[float, bool]:
         """Return ``(affinity, used_unknown_fallback)`` for *event_type*.
@@ -464,9 +467,14 @@ class MarketSelector:
         elif multiplier != 1.0:
             parts.append(f"regime_multiplier={multiplier:.2f}")
         if unknown_event_fallback_count > 0:
+            # Derive neutral affinity from the configured constants to avoid
+            # hard-coding values that can drift if defaults change.
+            neutral_affinity = EVENT_ASSET_AFFINITY.get("UNKNOWN", _DEFAULT_AFFINITY)
+            equity_affinity = neutral_affinity.get("equity", _DEFAULT_AFFINITY["equity"])
+            crypto_affinity = neutral_affinity.get("crypto", _DEFAULT_AFFINITY["crypto"])
             parts.append(
                 "unknown_event_fallback="
                 f"{unknown_event_fallback_count} record(s) "
-                "(neutral_affinity=0.50/0.50)"
+                f"(neutral_affinity={equity_affinity:.2f}/{crypto_affinity:.2f})"
             )
         return "; ".join(parts)

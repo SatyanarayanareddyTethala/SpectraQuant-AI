@@ -30,6 +30,7 @@ from spectraquant_v3.intelligence.market_selector import (
     MarketSelector,
     MarketSelectorDecision,
     ScoredRecord,
+    _EVENT_TYPE_ALIASES,
 )
 
 
@@ -376,6 +377,44 @@ class TestEventTypeAffinity:
         baseline = sel.score([upper]).equity_score
         assert sel.score([lower]).equity_score == pytest.approx(baseline, rel=1e-9)
         assert sel.score([mixed]).equity_score == pytest.approx(baseline, rel=1e-9)
+
+    def test_event_type_alias_ma_resolves_to_m_and_a(self) -> None:
+        """'M&A' alias should resolve to 'M_AND_A' affinity."""
+        sel = MarketSelector()
+        alias_rec = _rec(asset="equity", event_type="M&A", impact_score=0.8, confidence=0.8)
+        canonical_rec = _rec(asset="equity", event_type="M_AND_A", impact_score=0.8, confidence=0.8)
+
+        assert sel.score([alias_rec]).equity_score == pytest.approx(
+            sel.score([canonical_rec]).equity_score, rel=1e-9
+        )
+
+    def test_event_type_alias_regulation_resolves_to_regulatory(self) -> None:
+        """'REGULATION' alias should resolve to 'REGULATORY' affinity."""
+        sel = MarketSelector()
+        alias_rec = _rec(asset="equity", event_type="regulation", impact_score=0.8, confidence=0.8)
+        canonical_rec = _rec(asset="equity", event_type="REGULATORY", impact_score=0.8, confidence=0.8)
+
+        assert sel.score([alias_rec]).equity_score == pytest.approx(
+            sel.score([canonical_rec]).equity_score, rel=1e-9
+        )
+
+    def test_event_type_whitespace_is_stripped_before_lookup(self) -> None:
+        """Leading/trailing whitespace in event_type should be ignored."""
+        sel = MarketSelector()
+        padded = _rec(asset="equity", event_type="  earnings  ", impact_score=0.8, confidence=0.8)
+        clean = _rec(asset="equity", event_type="EARNINGS", impact_score=0.8, confidence=0.8)
+
+        assert sel.score([padded]).equity_score == pytest.approx(
+            sel.score([clean]).equity_score, rel=1e-9
+        )
+
+    def test_all_aliases_resolve_to_existing_affinity_keys(self) -> None:
+        """Every entry in _EVENT_TYPE_ALIASES must map to a key in EVENT_ASSET_AFFINITY."""
+        for alias, canonical in _EVENT_TYPE_ALIASES.items():
+            assert canonical in EVENT_ASSET_AFFINITY, (
+                f"Alias {alias!r} maps to {canonical!r} which is not in EVENT_ASSET_AFFINITY"
+            )
+
 
     def test_unknown_event_fallback_is_reported_in_rationale(self) -> None:
         """Unknown event_type fallback should be explicitly explained."""
