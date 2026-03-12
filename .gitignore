@@ -30,6 +30,7 @@ htmlcov/
 # ── Generated reports and run outputs ────────────────────────────────────────
 reports/
 research_runs/
+models/
 
 # ── Runtime data caches ───────────────────────────────────────────────────────
 data/news_cache/

@@ -1,81 +1,99 @@
-# SpectraQuant-AI-V2 / V3
+# SpectraQuant-AI
 
-This repository contains two generations of the SpectraQuant systematic research platform:
+**Systematic trading research platform** supporting equities and crypto with
+event-driven + technical hybrid strategies.
 
-| CLI entry point | Package | Status |
+| CLI | Package | Status |
 |---|---|---|
-| `spectraquant` | `spectraquant` (V2) | Production — equities-focused |
-| `sqv3` | `spectraquant_v3` (V3) | **Scaffold** — crypto + equities, strict segregation |
+| `spectraquant` | `spectraquant` (V2) | Stable — equities-focused |
+| `sqv3` | `spectraquant_v3` (V3) | Active development — crypto + equities, modern typed architecture |
 
 ---
 
-## SpectraQuant-AI-V3 (New)
+## Table of Contents
 
-SpectraQuant-AI-V3 is a production-grade systematic research and trading platform that supports **both crypto and equity markets with strict runtime segregation**.  The V3 architecture enforces that no crypto symbols appear in equity runs and no equity symbols appear in crypto runs.
+1. [Project Overview](#1-project-overview)
+2. [Key Capabilities](#2-key-capabilities)
+3. [Architecture Overview](#3-architecture-overview)
+4. [Repository Structure](#4-repository-structure)
+5. [Development Setup](#5-development-setup)
+6. [Example Workflow](#6-example-workflow)
+7. [CLI Commands](#7-cli-commands)
+8. [Testing](#8-testing)
+9. [Current Research Areas](#9-current-research-areas)
+10. [Roadmap](#10-roadmap)
+11. [Documentation](#11-documentation)
+12. [Contributing](#12-contributing)
 
-### V3 Architecture
+---
 
-```
-src/spectraquant_v3/
-├── core/          # Shared abstractions only (enums, errors, config, cache, manifest, schema, QA)
-├── crypto/        # Crypto pipeline (CCXT / Binance / CoinGecko / Glassnode)
-│   ├── ingestion/
-│   ├── signals/
-│   ├── universe/
-│   ├── symbols/
-│   └── features/
-├── equities/      # Equity pipeline (yfinance / provider abstraction)
-│   ├── ingestion/
-│   ├── signals/
-│   ├── universe/
-│   ├── symbols/
-│   └── features/
-├── pipeline/      # Orchestrators: crypto_pipeline.py, equity_pipeline.py
-└── cli/           # Typer CLI (sqv3)
-    └── commands/
-        ├── crypto.py
-        └── equities.py
+## 1. Project Overview
 
-config/v3/
-├── base.yaml      # Shared defaults
-├── crypto.yaml    # Crypto-specific config
-└── equities.yaml  # Equity-specific config
-```
+SpectraQuant-AI is a research platform for systematic trading strategy
+development across **equities** and **crypto** markets.  The platform is built
+around the principle that market opportunity is primarily driven by **events**
+and **news catalysts**, layered on top of standard technical signals.
 
-### V3 Key Architecture Rules
+The codebase contains two generations:
 
-1. **Strict runtime segregation**: `sqv3 crypto` and `sqv3 equity` must never be combined.
-2. **No silent failures**: empty DataFrames, unresolved symbols, and cache misses in test-mode all raise explicit exceptions.
-3. **Three run modes**: `normal` (cache-first), `test` (cache-only, CI-safe), `refresh` (force redownload).
+- **V2** (`src/spectraquant/`) — production-quality equities pipeline, stable
+  CLI, news-aware candidate selection, signal generation, and portfolio
+  assembly.
+- **V3** (`src/spectraquant_v3/`) — modern typed architecture, strict
+  asset-class segregation, experiment infrastructure, hybrid strategy research,
+  and a news intelligence layer with a deterministic market selector.
+
+---
+
+## 2. Key Capabilities
+
+| Capability | Module |
+|---|---|
+| News intelligence abstraction | `spectraquant_v3/core/news_schema.py`, `news_intel_store.py` |
+| Perplexity catalyst discovery | `spectraquant_v3/core/providers/perplexity_provider.py` |
+| Deterministic market selector | `spectraquant_v3/intelligence/market_selector.py` |
+| Hybrid strategy experiments | `spectraquant_v3/experiments/` |
+| Experiment manager | `spectraquant_v3/experiments/experiment_manager.py` |
+| Feature store | `spectraquant_v3/feature_store/` |
+| Equity signal agents | `spectraquant_v3/equities/signals/` |
+| Crypto pipeline | `spectraquant_v3/crypto/` |
+| Backtesting framework | `spectraquant_v3/backtest/` |
+| V2 equities pipeline (stable) | `spectraquant/` |
+
+---
+
+## 3. Architecture Overview
+
+### V2 vs V3
+
+**V2** (`src/spectraquant/`)
+
+- Stable equities-only research pipeline
+- NewsAPI-based candidate selection
+- Feature building, model training, signal export
+- Portfolio construction and governance
+- Mature CLI (`spectraquant`)
+
+**V3** (`src/spectraquant_v3/`)
+
+- Modern typed architecture with strict runtime segregation
+- Equities **and** crypto pipelines with no symbol cross-contamination
+- News intelligence layer with provider abstraction (e.g. Perplexity)
+- Deterministic market selector routing decisions to equity / crypto / mixed
+- Hybrid strategy research combining technical + news signals
+- Experiment manager for systematic strategy evaluation
+- Feature store for reusable signal infrastructure
+- Modern CLI (`sqv3`)
+
+### V3 Key Rules
+
+1. **Strict runtime segregation** — crypto and equity runs must never mix symbols.
+2. **No silent failures** — empty DataFrames, unresolved symbols, and cache
+   misses in test mode all raise explicit typed exceptions.
+3. **Three run modes** — `normal` (cache-first), `test` (cache-only, CI-safe),
+   `refresh` (force redownload).
 4. **Every run writes a manifest** — including aborted runs.
-5. **QA matrix** with one row per symbol per run.
-
-### V3 Quick Start
-
-```bash
-# Install (editable)
-pip install -e .
-
-# Show help
-sqv3 --help
-
-# Check environment and config
-sqv3 doctor
-
-# Run crypto pipeline (scaffold stub — prints status, not yet implemented)
-sqv3 crypto run --mode normal
-
-# Run equity pipeline (scaffold stub)
-sqv3 equity run --mode normal
-```
-
-### V3 Run Modes
-
-| Mode | Cache behaviour | Network allowed | Use case |
-|---|---|---|---|
-| `normal` | Cache-first, download missing | Yes | Day-to-day research |
-| `test` | Cache-only | **No** — raises `CacheOnlyViolationError` | CI, reproducibility |
-| `refresh` | Force redownload | Yes | Stale-data recovery |
+5. **QA matrix** — one row per symbol per run.
 
 ### V3 Custom Exceptions
 
@@ -89,15 +107,103 @@ sqv3 equity run --mode normal
 | `CacheOnlyViolationError` | Network call attempted in test mode |
 | `CacheCorruptionError` | Cached parquet fails schema validation |
 
-### V3 Config Files
+---
 
-```bash
-config/v3/base.yaml      # Shared defaults (run mode, cache, QA thresholds, execution, portfolio)
-config/v3/crypto.yaml    # Crypto universe, exchanges, quality gates, reports
-config/v3/equities.yaml  # Equity universe, provider, quality gates, reports
+## 4. Repository Structure
+
+```
+SpectraQuant-AI/
+├── src/
+│   ├── spectraquant/          # V2: stable equities pipeline
+│   │   ├── agents/            #   Signal agents
+│   │   ├── alpha/             #   Alpha generation
+│   │   ├── cli/               #   `spectraquant` CLI
+│   │   ├── crypto/            #   V2 crypto modules
+│   │   ├── equities/          #   V2 equity modules
+│   │   ├── features/          #   Feature engineering
+│   │   ├── intelligence/      #   V2 news intelligence
+│   │   └── ...
+│   └── spectraquant_v3/       # V3: modern typed architecture
+│       ├── core/              #   Shared types, errors, schema, QA, cache
+│       │   └── providers/     #   News provider abstraction (Perplexity, …)
+│       ├── intelligence/      #   Market selector
+│       ├── equities/          #   V3 equity pipeline
+│       ├── crypto/            #   V3 crypto pipeline
+│       ├── pipeline/          #   Orchestrators
+│       ├── strategies/        #   Strategy definitions, agents, allocators
+│       ├── backtest/          #   Backtesting engine
+│       ├── experiments/       #   Experiment manager, hybrid params
+│       ├── feature_store/     #   Feature store
+│       ├── research/          #   Dataset builder
+│       └── cli/               #   `sqv3` CLI
+│           └── commands/
+├── tests/                     # V2 test suite
+│   └── v3/                    # V3 test suite
+├── config/
+│   ├── base.yaml              # V2 shared config
+│   ├── equities.yaml
+│   ├── crypto.yaml
+│   └── v3/                    # V3 config files
+│       ├── base.yaml
+│       ├── equities.yaml
+│       ├── crypto.yaml
+│       ├── news.yaml
+│       ├── providers.yaml
+│       ├── risk.yaml
+│       └── strategies.yaml
+├── docs/
+│   ├── architecture/          # Architecture docs (market selector, …)
+│   ├── design/                # Design docs and ADRs
+│   ├── howto/                 # Getting started, installation, quick reference
+│   └── implementation/        # Implementation reports
+├── scripts/                   # Utility scripts (download, research, diagnostics)
+├── dashboard/                 # Streamlit dashboard
+├── data/
+│   └── universe/              # Universe CSV files (NSE, LSE, Nifty 50, …)
+├── archive/                   # Archived / legacy code (not imported)
+├── alembic/                   # Database migrations
+├── pyproject.toml
+├── requirements.txt
+├── requirements-v3.txt
+└── CONTRIBUTING.md
 ```
 
-Override the config directory at runtime:
+---
+
+## 5. Development Setup
+
+**Requirements:** Python 3.10+
+
+```bash
+git clone https://github.com/SatyanarayanareddyTethala/SpectraQuant-AI.git
+cd SpectraQuant-AI
+
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt    # V2 core deps
+pip install -r requirements-v3.txt # V3 additional deps
+
+# Editable install (exposes both CLI entry points)
+pip install -e .
+```
+
+Windows users may alternatively run `install.bat`; macOS/Linux can use
+`install.sh`.
+
+**Minimum configuration:**
+
+1. Copy `.env.example` to `.env` and fill in secrets:
+   - `NEWSAPI_KEY` — required for V2 `news-scan`
+   - `PERPLEXITY_API_KEY` — required for V3 news intelligence
+   - `SPECTRAQUANT_UNIVERSE` — optional override for default universe CSV
+2. Adjust `config.yaml` (V2) or `config/v3/` (V3) as needed.
+
+**V3 config override at runtime:**
+
 ```bash
 SPECTRAQUANT_V3_CONFIG_DIR=/path/to/my/config sqv3 crypto run
 # or
@@ -106,66 +212,177 @@ sqv3 crypto run --config-dir /path/to/my/config
 
 ---
 
-## SpectraQuant-AI-V2 (Existing)
+## 6. Example Workflow
 
-SpectraQuant-AI-V2 is a research-first equities pipeline for signal generation, portfolio simulation, and governance. The `spectraquant` CLI orchestrates data download, feature building, model training, news-aware candidate selection, signal generation, and portfolio assembly for supported universes (NSE/LSE by default).
+A typical research loop using V3:
 
-## Quickstart (macOS/Linux/Windows)
-```bash
-git clone https://github.com/satyanarayanar17-dev/SpectraQuant-AI-V2.git
-cd SpectraQuant-AI-V2
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
-pip install --upgrade pip
-pip install -r requirements.txt
-# optional: editable install for CLI entrypoint
-pip install -e .
 ```
-Windows users may alternatively run `install.bat`; macOS/Linux can use `install.sh`.
+1. Ingest prices
+   sqv3 equity run --mode normal
+   sqv3 crypto run --mode normal
 
-## Minimum configuration
-1. Copy `config.yaml` (already present) and adjust:
-   - `universe.default`: choose a CSV under `data/universe/` (e.g., `nifty_50.csv`, `lse_all.csv`).
-   - `news_api.key`: set your NewsAPI key.
-2. Provide secrets via environment (or `.env.example` as a template):
-   - `NEWSAPI_KEY` (required for `news-scan`)
-   - optional: `SPECTRAQUANT_UNIVERSE` to override the default universe CSV name.
-3. Ensure data directory access: `data/universe/` must stay tracked; runtime outputs land in `reports/`, `logs/`, `models/`.
+2. Fetch news intelligence
+   sqv3 research run --news-scan
 
-## Primary workflows (CLI)
-All commands run from the repo root after activating the venv:
+3. Generate signals
+   sqv3 equity signals
+   sqv3 crypto signals
+
+4. Run hybrid strategies
+   sqv3 strategy run --strategy momentum_news_hybrid
+
+5. Run experiments
+   sqv3 experiment run --config config/v3/strategies.yaml
+
+6. Evaluate results
+   sqv3 experiment results --latest
+
+7. Deploy or paper-trade strategy
+   sqv3 strategy portfolio --strategy momentum_news_hybrid
+```
+
+---
+
+## 7. CLI Commands
+
+### V2 (`spectraquant`)
+
 ```bash
 spectraquant --help
+
+# Health check — validates config, data folders, and dependencies
+spectraquant doctor
+
+# Download price data
+spectraquant download
+
+# News candidate scan
+spectraquant news-scan
+
+# End-to-end refresh (download → features → train → predict)
+spectraquant refresh
+
+# Signal export
+spectraquant signals
+
+# Portfolio build
+spectraquant portfolio
+
+# Additional: build-dataset, train, predict, score, eval, universe utilities
 ```
 
-Common flows:
-- **Health check**: `spectraquant doctor` — validates config, data folders, and dependencies.
-- **News candidate scan**: `spectraquant news-scan` — fetches news, writes candidates to `reports/news/`.
-- **Data refresh**: `spectraquant refresh` — end-to-end download, feature build, dataset creation, training, and predictions.
-- **Signal export**: `spectraquant signals` — emits signal CSVs under `reports/signals/`.
-- **Portfolio build**: `spectraquant portfolio` — constructs point-in-time portfolios using latest signals/prices.
+### V3 (`sqv3`)
 
-See `spectraquant --help` for additional commands such as `download`, `build-dataset`, `train`, `predict`, `score`, `eval`, and universe utilities.
-
-## Troubleshooting
-- **NewsAPI 401**: Confirm `NEWSAPI_KEY` is set in the environment and matches `config.yaml` if specified.
-- **Empty universe**: Verify the chosen CSV exists under `data/universe/` and `SPECTRAQUANT_UNIVERSE` points to a valid file name without path changes.
-- **Too few eligible tickers after filtering**: Relax QA thresholds in `config.yaml` (`qa.min_price_rows`, `qa.min_non_null_ratio`) or select a broader universe CSV.
-- **Path import/shadowing issues**: Avoid local files named `spectraquant.py` or `path.py`; ensure you run inside the project venv and that `src/` is discoverable (editable install recommended).
-
-## Testing and validation
-Run a lightweight validation before changes:
 ```bash
+sqv3 --help
+
+# Environment and config check
+sqv3 doctor
+
+# Equity pipeline
+sqv3 equity run --mode normal      # normal | test | refresh
+sqv3 equity signals
+
+# Crypto pipeline
+sqv3 crypto run --mode normal
+sqv3 crypto signals
+
+# Research (news intelligence + dataset building)
+sqv3 research run
+
+# Strategy and experiments
+sqv3 strategy run --strategy <name>
+sqv3 strategy portfolio --strategy <name>
+sqv3 experiment run
+sqv3 experiment results
+
+# Backtesting
+sqv3 backtest run --strategy <name>
+
+# Feature store
+sqv3 feature-store list
+sqv3 feature-store build
+```
+
+### V3 Run Modes
+
+| Mode | Behaviour | Network | Use case |
+|---|---|---|---|
+| `normal` | Cache-first, download missing | Yes | Day-to-day research |
+| `test` | Cache-only | **No** (raises `CacheOnlyViolationError`) | CI, reproducibility |
+| `refresh` | Force redownload | Yes | Stale-data recovery |
+
+---
+
+## 8. Testing
+
+```bash
+# Compile check
 python -m compileall src
+
+# Full V2 test suite
 pytest -q
+
+# V3 tests only
+pytest tests/v3/ -q
+
+# Single test file
+pytest tests/v3/test_v3_market_selector.py -v
+
+# Health check
 spectraquant --help
+sqv3 --help
 ```
 
-## Documentation
-- Quick reference and guides live under `docs/howto/`.
-- Architecture and roadmap: `docs/design/`.
-- Implementation reports and deliverables: `docs/implementation/`.
-- Full index: [DOCS_INDEX.md](DOCS_INDEX.md).
+Tests are located in:
 
-## License and contributions
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [CHANGELOG.md](CHANGELOG.md) for release notes.
+- `tests/` — V2 tests (universe, signals, pipeline, governance, …)
+- `tests/v3/` — V3 tests (market selector, hybrid strategies, backtest,
+  experiments, ingestion, …)
+
+CI runs on every push via `.github/workflows/tests.yml`.
+
+---
+
+## 9. Current Research Areas
+
+- **News-driven strategies** — using event catalysts to time and size positions
+  in equities and crypto
+- **Cross-asset opportunity selection** — deterministic routing between equity
+  and crypto based on news intelligence
+- **Hybrid signals** — combining technical momentum with news sentiment and
+  impact scores
+- **Event intelligence** — improving the Perplexity catalyst provider with
+  structured event ontologies
+
+---
+
+## 10. Roadmap
+
+- News-first routing integrated into live strategy runner
+- Improved catalyst scoring with structured ontology
+- Automated experiment scheduling and result ranking
+- Feature store expansion (on-chain metrics, macro factors)
+- Provider abstraction extended to additional news vendors
+
+See [CHANGELOG.md](CHANGELOG.md) for completed work.
+
+---
+
+## 11. Documentation
+
+| Location | Contents |
+|---|---|
+| `docs/architecture/` | Component architecture (market selector, …) |
+| `docs/design/` | Design docs, ADRs, V3 audit notes |
+| `docs/howto/` | Getting started, installation, quick reference |
+| `docs/implementation/` | Implementation reports and deliverables |
+| [DOCS_INDEX.md](DOCS_INDEX.md) | Full documentation index |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+
+---
+
+## 12. Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding guidelines, PR checklist,
+and V3 development conventions.
