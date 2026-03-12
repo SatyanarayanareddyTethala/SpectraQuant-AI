@@ -110,10 +110,17 @@ class MarketSelectorDecision:
             ``"UNKNOWN"`` if none was given.
         regime_vetoed:       ``True`` when the regime forced ``RUN_NONE``
             regardless of scores.
-        threshold_used:      The ``min_score_to_run`` threshold applied.
-        both_threshold_used: The ``both_threshold`` applied.
-        thresholds:          Named routing thresholds used by the decision
-            logic.
+        threshold_used:      The effective opportunity-floor threshold that
+            was actually compared to scores when deciding whether to run any
+            market (after applying any overrides such as
+            ``low_opportunity_floor``).
+        both_threshold_used: The effective high-opportunity threshold that
+            was actually compared to scores when deciding to run both
+            markets (after applying any overrides such as
+            ``high_opportunity_threshold``).
+        thresholds:          Mapping of all named routing thresholds and
+            their values that influenced this decision (including configured
+            defaults and any per-call overrides).
         rationale:           Human-readable score breakdown.
         scored_at:           ISO-8601 UTC timestamp of the scoring call.
         top_equity_records:  Up to ``top_n`` highest-contributing equity
@@ -132,9 +139,9 @@ class MarketSelectorDecision:
     regime_vetoed: bool
     threshold_used: float
     both_threshold_used: float
-    thresholds: dict[str, float]
     rationale: str
     scored_at: str
+    thresholds: dict[str, float] = field(default_factory=dict)
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
 
@@ -200,6 +207,27 @@ class MarketSelector:
         self._half_life_hours: float = float(cfg.get("half_life_hours", 6.0))
         self._top_n: int = int(cfg.get("top_n", 5))
 
+        if self._low_opportunity_floor < 0.0:
+            raise ValueError(
+                f"low_opportunity_floor must be >= 0, got {self._low_opportunity_floor!r}"
+            )
+        if self._high_opportunity_threshold < 0.0:
+            raise ValueError(
+                f"high_opportunity_threshold must be >= 0, got {self._high_opportunity_threshold!r}"
+            )
+        if self._low_opportunity_floor > self._high_opportunity_threshold:
+            raise ValueError(
+                f"low_opportunity_floor ({self._low_opportunity_floor!r}) must be "
+                f"<= high_opportunity_threshold ({self._high_opportunity_threshold!r})"
+            )
+        if self._both_margin < 0.0:
+            raise ValueError(
+                f"both_margin must be >= 0, got {self._both_margin!r}"
+            )
+        if self._minimum_score_gap < 0.0:
+            raise ValueError(
+                f"minimum_score_gap must be >= 0, got {self._minimum_score_gap!r}"
+            )
         if self._half_life_hours <= 0.0:
             raise ValueError(
                 f"half_life_hours must be > 0, got {self._half_life_hours!r}"
