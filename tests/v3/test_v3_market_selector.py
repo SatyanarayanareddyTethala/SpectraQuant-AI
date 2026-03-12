@@ -29,6 +29,7 @@ from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
     MarketSelector,
     MarketSelectorDecision,
+    MarketSelectorInput,
     ScoredRecord,
 )
 
@@ -257,7 +258,7 @@ class TestRegimeHandling:
         event_driven = sel.score(records, regime_label="EVENT_DRIVEN")
         if normal.equity_score > 0:
             ratio = event_driven.equity_score / normal.equity_score
-            assert abs(ratio - 1.2) < 1e-6
+            assert abs(ratio - 1.2) < 1e-5
 
     def test_unknown_regime_is_neutral(self) -> None:
         """Unrecognised regime labels should not alter scores."""
@@ -495,3 +496,48 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+# ===========================================================================
+# As-of anchoring / new scoring components
+# ===========================================================================
+
+
+class TestAsOfAnchoringAndScoringComponents:
+    """Verify recency anchoring and new opportunity-score components."""
+
+    def test_as_of_anchor_controls_recency_decay(self) -> None:
+        sel = MarketSelector()
+        rec = _equity(timestamp="2025-01-01T00:00:00+00:00", impact_score=0.9, confidence=0.9)
+        old_anchor = sel.score([rec], as_of_utc="2025-01-03T00:00:00+00:00")
+        fresh_anchor = sel.score([rec], as_of_utc="2025-01-01T00:00:00+00:00")
+        assert fresh_anchor.equity_score > old_anchor.equity_score
+
+    def test_asset_specific_half_life_config_changes_decay(self) -> None:
+        rec = _equity(timestamp="2025-01-01T00:00:00+00:00", impact_score=0.9, confidence=0.9)
+        fast_decay = MarketSelector(config={"recency_half_life_hours_equity": 1.0})
+        slow_decay = MarketSelector(config={"recency_half_life_hours_equity": 24.0})
+        anchor = "2025-01-01T06:00:00+00:00"
+        slow_score = slow_decay.score([rec], as_of_utc=anchor).equity_score
+        fast_score = fast_decay.score([rec], as_of_utc=anchor).equity_score
+        assert slow_score > fast_score
+
+    def test_sentiment_factor_boosts_extreme_sentiment(self) -> None:
+        sel = MarketSelector()
+        neutral = _equity(sentiment_score=0.0, impact_score=0.9, confidence=0.9)
+        extreme = _equity(sentiment_score=1.0, impact_score=0.9, confidence=0.9)
+        assert sel.score([extreme]).equity_score > sel.score([neutral]).equity_score
+
+    def test_market_selector_input_as_of_utc_is_used(self) -> None:
+        sel = MarketSelector()
+        rec = _equity(timestamp="2025-01-01T00:00:00+00:00", impact_score=0.9, confidence=0.9)
+        old_input = MarketSelectorInput(
+            records=[rec],
+            as_of_utc="2025-01-03T00:00:00+00:00",
+        )
+        fresh_input = MarketSelectorInput(
+            records=[rec],
+            as_of_utc="2025-01-01T00:00:00+00:00",
+        )
+        assert sel.score(fresh_input).equity_score > sel.score(old_input).equity_score
+

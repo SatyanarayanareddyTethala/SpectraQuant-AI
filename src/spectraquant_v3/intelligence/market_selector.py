@@ -136,6 +136,23 @@ class MarketSelectorDecision:
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
 
 
+@dataclass
+class MarketSelectorInput:
+    """Typed input payload for :meth:`MarketSelector.score`.
+
+    Attributes:
+        records: News records to score.
+        regime_label: Optional regime string for threshold modulation / veto.
+        as_of_utc: ISO-8601 UTC anchor used for recency decay.  This is used
+            instead of wall-clock time so backtests and repeated runs are
+            deterministic for the same payload.
+    """
+
+    records: list[NewsIntelligenceRecord]
+    regime_label: str = "UNKNOWN"
+    as_of_utc: str = ""
+
+
 # ---------------------------------------------------------------------------
 # MarketSelector
 # ---------------------------------------------------------------------------
@@ -171,18 +188,42 @@ class MarketSelector:
         cfg = config or {}
         self._min_score: float = float(cfg.get("min_score_to_run", 0.35))
         self._both_threshold: float = float(cfg.get("both_threshold", 0.60))
-        self._half_life_hours: float = float(cfg.get("half_life_hours", 6.0))
+        default_half_life = float(cfg.get("half_life_hours", 6.0))
+        self._half_life_hours_equity: float = float(
+            cfg.get("recency_half_life_hours_equity", default_half_life)
+        )
+        self._half_life_hours_crypto: float = float(
+            cfg.get("recency_half_life_hours_crypto", default_half_life)
+        )
         self._top_n: int = int(cfg.get("top_n", 5))
+        self._top_k_intensity: int = int(cfg.get("top_k_intensity", 3))
+        self._opportunity_scale: float = float(cfg.get("opportunity_scale", 0.35))
+        self._enable_weak_noise_penalty: bool = bool(
+            cfg.get("enable_weak_noise_penalty", True)
+        )
 
-        if self._half_life_hours <= 0.0:
+        if self._half_life_hours_equity <= 0.0:
             raise ValueError(
-                f"half_life_hours must be > 0, got {self._half_life_hours!r}"
+                "recency_half_life_hours_equity must be > 0, "
+                f"got {self._half_life_hours_equity!r}"
+            )
+        if self._half_life_hours_crypto <= 0.0:
+            raise ValueError(
+                "recency_half_life_hours_crypto must be > 0, "
+                f"got {self._half_life_hours_crypto!r}"
             )
         if self._top_n < 0:
             raise ValueError(f"top_n must be >= 0, got {self._top_n!r}")
+        if self._top_k_intensity <= 0:
+            raise ValueError(f"top_k_intensity must be > 0, got {self._top_k_intensity!r}")
+        if self._opportunity_scale <= 0.0:
+            raise ValueError(f"opportunity_scale must be > 0, got {self._opportunity_scale!r}")
 
-        # Pre-compute decay constant
-        self._lambda: float = math.log(2.0) / self._half_life_hours
+        # Pre-compute decay constants by asset class.
+        self._lambda_by_asset: dict[str, float] = {
+            "equity": math.log(2.0) / self._half_life_hours_equity,
+            "crypto": math.log(2.0) / self._half_life_hours_crypto,
+        }
 
     # ------------------------------------------------------------------
     # Public API
@@ -190,9 +231,10 @@ class MarketSelector:
 
     def score(
         self,
-        records: list[NewsIntelligenceRecord],
+        records: list[NewsIntelligenceRecord] | MarketSelectorInput,
         *,
         regime_label: str = "UNKNOWN",
+        as_of_utc: str = "",
     ) -> MarketSelectorDecision:
         """Score *records* and return a routing decision.
 
@@ -204,6 +246,9 @@ class MarketSelector:
             Optional market regime string, e.g. ``"PANIC"``, ``"RISK_OFF"``,
             ``"EVENT_DRIVEN"``.  Case-sensitive (upper-case convention from
             V2 ``regime_engine.py``).  Unknown values are treated as neutral.
+        as_of_utc:
+            Optional ISO-8601 UTC anchor used for recency decay.  When empty,
+            current UTC time is used.
 
         Returns
         -------
@@ -211,15 +256,30 @@ class MarketSelector:
             A fully populated decision with scores, route, rationale, and
             contributing records.
         """
-        scored_at = datetime.now(tz=timezone.utc).isoformat()
+        if isinstance(records, MarketSelectorInput):
+            selector_input = records
+            records = selector_input.records
+            regime_label = selector_input.regime_label
+            as_of_utc = selector_input.as_of_utc
+
+        reference_time = self._parse_reference_time(as_of_utc)
+        scored_at = reference_time.isoformat()
 
         # 1. Partition by asset class
         equity_records = [r for r in records if r.asset == "equity"]
         crypto_records = [r for r in records if r.asset == "crypto"]
 
         # 2. Score each asset class
-        equity_weights, equity_score_raw = self._score_records(equity_records, "equity")
-        crypto_weights, crypto_score_raw = self._score_records(crypto_records, "crypto")
+        equity_weights, equity_score_raw = self._score_records(
+            equity_records,
+            "equity",
+            reference_time,
+        )
+        crypto_weights, crypto_score_raw = self._score_records(
+            crypto_records,
+            "crypto",
+            reference_time,
+        )
 
         # 3. Apply regime multipliers (before veto check)
         regime_upper = regime_label.upper()
@@ -272,7 +332,28 @@ class MarketSelector:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _recency_weight(self, timestamp: str) -> float:
+    @staticmethod
+    def _parse_reference_time(as_of_utc: str) -> datetime:
+        """Return the recency anchor time.
+
+        Invalid anchors gracefully fall back to current UTC time.
+        """
+        if not as_of_utc:
+            return datetime.now(tz=timezone.utc)
+        try:
+            ref = datetime.fromisoformat(as_of_utc.replace("Z", "+00:00"))
+            if ref.tzinfo is None:
+                ref = ref.replace(tzinfo=timezone.utc)
+            return ref
+        except (ValueError, TypeError) as exc:
+            logger.warning(
+                "MarketSelector: invalid as_of_utc %r — falling back to now: %s",
+                as_of_utc,
+                exc,
+            )
+            return datetime.now(tz=timezone.utc)
+
+    def _recency_weight(self, timestamp: str, *, reference_time: datetime, asset_class: str) -> float:
         """Return exponential recency decay weight for an ISO-8601 timestamp.
 
         ``recency(t) = exp(-lambda * age_hours)``
@@ -284,9 +365,9 @@ class MarketSelector:
             event_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             if event_time.tzinfo is None:
                 event_time = event_time.replace(tzinfo=timezone.utc)
-            now = datetime.now(tz=timezone.utc)
-            age_hours = max((now - event_time).total_seconds() / 3600.0, 0.0)
-            return math.exp(-self._lambda * age_hours)
+            age_hours = max((reference_time - event_time).total_seconds() / 3600.0, 0.0)
+            decay_lambda = self._lambda_by_asset.get(asset_class, self._lambda_by_asset["equity"])
+            return math.exp(-decay_lambda * age_hours)
         except (ValueError, TypeError) as exc:
             logger.warning(
                 "MarketSelector: could not parse timestamp %r — treating as age 0: %s",
@@ -304,6 +385,7 @@ class MarketSelector:
         self,
         records: list[NewsIntelligenceRecord],
         asset_class: str,
+        reference_time: datetime,
     ) -> tuple[list[float], float]:
         """Compute a weighted aggregate score for *records*.
 
@@ -319,26 +401,82 @@ class MarketSelector:
 
         Scoring formula (per record):
             ``w_i = recency(timestamp_i) * impact_score_i
-                    * affinity(event_type_i, asset_class) * confidence_i``
+                    * affinity(event_type_i, asset_class) * confidence_i
+                    * (0.5 + 0.5 * abs(sentiment_score_i))``
 
-            ``score = sum(w_i) / max(N, 1)``  clipped to ``[0.0, 1.0]``
+            Aggregate score uses a bounded combination of:
+            * top-k contribution intensity
+            * breadth/diversity signal
+            * optional weak-noise penalty
         """
         if not records:
             return [], 0.0
 
         weights: list[float] = []
         for rec in records:
+            # Sentiment intensity amplifies both strongly positive and strongly
+            # negative events while preserving determinism in [0.5, 1.0].
+            sentiment_factor = 0.5 + 0.5 * abs(rec.sentiment_score)
             w = (
-                self._recency_weight(rec.timestamp)
+                self._recency_weight(
+                    rec.timestamp,
+                    reference_time=reference_time,
+                    asset_class=asset_class,
+                )
                 * rec.impact_score
                 * self._affinity(rec.event_type, asset_class)
                 * rec.confidence
+                * sentiment_factor
             )
             weights.append(w)
 
-        score = sum(weights) / max(len(weights), 1)
-        score = max(0.0, min(1.0, score))
+        score = self._compose_asset_opportunity_score(records, weights)
         return weights, score
+
+    def _compose_asset_opportunity_score(
+        self,
+        records: list[NewsIntelligenceRecord],
+        contributions: list[float],
+    ) -> float:
+        """Compose a bounded [0,1] opportunity score from interpretable parts."""
+        if not records:
+            return 0.0
+
+        intensity_component = self._top_k_intensity_component(contributions)
+        breadth_component = self._breadth_component(records)
+
+        combined = (0.65 * intensity_component) + (0.35 * breadth_component)
+        combined -= self._weak_noise_penalty(contributions)
+
+        return max(0.0, min(1.0, combined))
+
+    def _top_k_intensity_component(self, contributions: list[float]) -> float:
+        """Return a bounded signal from the mean of top-k contributions."""
+        if not contributions:
+            return 0.0
+        top_k = sorted(contributions, reverse=True)[: self._top_k_intensity]
+        top_k_mean = sum(top_k) / len(top_k)
+        # Rational bounded mapping: x / (x + s), monotonic and explainable.
+        return top_k_mean / (top_k_mean + self._opportunity_scale)
+
+    @staticmethod
+    def _breadth_component(records: list[NewsIntelligenceRecord]) -> float:
+        """Return a breadth score using count and diversity signals."""
+        event_count = len(records)
+        unique_event_types = len({rec.event_type for rec in records})
+        unique_symbols = len({rec.canonical_symbol for rec in records})
+
+        count_signal = 1.0 - math.exp(-event_count / 3.0)
+        diversity_signal = (unique_event_types + unique_symbols) / (2.0 * event_count)
+        return (0.7 * count_signal) + (0.3 * diversity_signal)
+
+    def _weak_noise_penalty(self, contributions: list[float]) -> float:
+        """Apply a small deterministic penalty when most events are very weak."""
+        if not self._enable_weak_noise_penalty or not contributions:
+            return 0.0
+        weak_threshold = 0.08
+        weak_fraction = sum(1 for c in contributions if c < weak_threshold) / len(contributions)
+        return min(0.03, 0.03 * weak_fraction)
 
     def _decide(self, equity_score: float, crypto_score: float) -> MarketRoute:
         """Apply routing thresholds and return a :class:`MarketRoute`.
