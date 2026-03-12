@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from typing import Any
 
@@ -197,7 +198,7 @@ class TestRegimesAndRiskFlags:
         )
 
         assert boosted.equity_score > neutral.equity_score
-        assert "EVENT_DRIVEN" in boosted.rationale.secondary_reasons[2]
+        assert any("EVENT_DRIVEN" in reason for reason in boosted.rationale.secondary_reasons)
 
     def test_high_cross_asset_stress_penalizes_scores(self) -> None:
         selector = MarketSelector()
@@ -277,6 +278,7 @@ class TestAffinityAndSerialization:
         assert EVENT_ASSET_AFFINITY["EARNINGS"] == {"equity": 1.00, "crypto": 0.05}
         assert EVENT_ASSET_AFFINITY["PROTOCOL_UPGRADE"] == {"equity": 0.05, "crypto": 0.95}
         assert EVENT_ASSET_AFFINITY["UNKNOWN"] == {"equity": 0.50, "crypto": 0.50}
+        assert canonicalize_event_type("M&A") == "M_AND_A"
         assert canonicalize_event_type("m&a") == "M_AND_A"
         assert get_event_asset_affinity("totally_new_event", "equity") == pytest.approx(0.50)
 
@@ -332,10 +334,11 @@ class TestAffinityAndSerialization:
 
         payload = selector_input.to_dict()
         restored = MarketSelectorInput.from_dict(json.loads(json.dumps(payload)))
+        normalized_as_of = datetime.fromisoformat(_AS_OF.replace("Z", "+00:00")).isoformat()
 
         assert sorted(payload.keys()) == ["as_of_utc", "config", "news_events", "regimes", "risk_flags"]
         expected_payload = dict(payload)
-        expected_payload["as_of_utc"] = "2026-03-11T09:00:00+00:00"
+        expected_payload["as_of_utc"] = normalized_as_of
         assert restored.to_dict() == expected_payload
         assert restored.news_events[0].canonical_symbol == "INFY.NS"
         assert restored.records == restored.news_events
