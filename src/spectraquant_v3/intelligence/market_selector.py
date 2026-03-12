@@ -18,6 +18,7 @@ Design constraints
 
 from __future__ import annotations
 
+import heapq
 import logging
 import math
 from dataclasses import dataclass, field
@@ -113,7 +114,11 @@ class MarketSelectorDecision:
         threshold_used:      The ``min_score_to_run`` threshold applied.
         both_threshold_used: The ``both_threshold`` applied.
         rationale:           Human-readable score breakdown.
-        scored_at:           ISO-8601 UTC timestamp of the scoring call.
+        scored_at:           ISO-8601 UTC timestamp of when scoring was
+            actually computed (wall-clock time).
+        reference_time:      ISO-8601 UTC anchor used for recency decay;
+            equals ``as_of_utc`` when supplied, otherwise same as
+            ``scored_at``.
         top_equity_records:  Up to ``top_n`` highest-contributing equity
             records for explainability.
         top_crypto_records:  Up to ``top_n`` highest-contributing crypto
@@ -132,6 +137,7 @@ class MarketSelectorDecision:
     both_threshold_used: float
     rationale: str
     scored_at: str
+    reference_time: str
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
 
@@ -175,13 +181,37 @@ class MarketSelector:
             to run simultaneously without applying the 1.5× dominance rule.
 
         ``half_life_hours`` (float, default ``6.0``)
-            Half-life in hours for the exponential recency decay:
+            Global half-life fallback for exponential recency decay when
+            asset-specific overrides are not provided:
             ``recency(t) = exp(-ln(2) / half_life_hours * age_hours)``.
+
+        ``recency_half_life_hours_equity`` (float, default ``half_life_hours``)
+            Half-life in hours for equity recency decay.  Overrides the global
+            ``half_life_hours`` for equity records.
+
+        ``recency_half_life_hours_crypto`` (float, default ``half_life_hours``)
+            Half-life in hours for crypto recency decay.  Overrides the global
+            ``half_life_hours`` for crypto records.
 
         ``top_n`` (int, default ``5``)
             Maximum number of scored records to include in
             :attr:`MarketSelectorDecision.top_equity_records` and
             :attr:`MarketSelectorDecision.top_crypto_records`.
+
+        ``top_k_intensity`` (int, default ``3``)
+            Number of highest-weighted records used to compute the intensity
+            component of the composed opportunity score.
+
+        ``opportunity_scale`` (float, default ``0.35``)
+            Scale parameter for the rational bounded mapping used to normalise
+            the intensity component:
+            ``intensity = mean_top_k / (mean_top_k + opportunity_scale)``.
+
+        ``enable_weak_noise_penalty`` (bool, default ``True``)
+            When ``True``, a small deterministic penalty is subtracted from
+            the composed score when most contributions are very weak
+            (below 0.08).  Accepts ``True``/``False`` booleans or the strings
+            ``"true"``/``"false"``/``"1"``/``"0"`` (case-insensitive).
     """
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
@@ -198,7 +228,7 @@ class MarketSelector:
         self._top_n: int = int(cfg.get("top_n", 5))
         self._top_k_intensity: int = int(cfg.get("top_k_intensity", 3))
         self._opportunity_scale: float = float(cfg.get("opportunity_scale", 0.35))
-        self._enable_weak_noise_penalty: bool = bool(
+        self._enable_weak_noise_penalty: bool = self._parse_bool(
             cfg.get("enable_weak_noise_penalty", True)
         )
 
@@ -263,7 +293,7 @@ class MarketSelector:
             as_of_utc = selector_input.as_of_utc
 
         reference_time = self._parse_reference_time(as_of_utc)
-        scored_at = reference_time.isoformat()
+        scored_at = datetime.now(timezone.utc).isoformat()
 
         # 1. Partition by asset class
         equity_records = [r for r in records if r.asset == "equity"]
@@ -324,6 +354,7 @@ class MarketSelector:
             both_threshold_used=self._both_threshold,
             rationale=rationale,
             scored_at=scored_at,
+            reference_time=reference_time.isoformat(),
             top_equity_records=top_equity,
             top_crypto_records=top_crypto,
         )
@@ -331,6 +362,28 @@ class MarketSelector:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_bool(value: object) -> bool:
+        """Parse a config value to bool, accepting common string representations.
+
+        Accepts actual booleans/ints and strings ``"true"``/``"false"``/
+        ``"1"``/``"0"`` (case-insensitive) so that string-based configs work
+        correctly — e.g. ``bool('False')`` would otherwise return ``True``.
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        if isinstance(value, str):
+            if value.strip().lower() in {"true", "1"}:
+                return True
+            if value.strip().lower() in {"false", "0"}:
+                return False
+        raise ValueError(
+            f"enable_weak_noise_penalty: cannot parse {value!r} as bool; "
+            "expected True/False or 'true'/'false'/'1'/'0'"
+        )
 
     @staticmethod
     def _parse_reference_time(as_of_utc: str) -> datetime:
@@ -344,7 +397,8 @@ class MarketSelector:
             ref = datetime.fromisoformat(as_of_utc.replace("Z", "+00:00"))
             if ref.tzinfo is None:
                 ref = ref.replace(tzinfo=timezone.utc)
-            return ref
+            # Normalize to UTC to keep as_of_utc semantics consistent.
+            return ref.astimezone(timezone.utc)
         except (ValueError, TypeError) as exc:
             logger.warning(
                 "MarketSelector: invalid as_of_utc %r — falling back to now: %s",
@@ -454,7 +508,7 @@ class MarketSelector:
         """Return a bounded signal from the mean of top-k contributions."""
         if not contributions:
             return 0.0
-        top_k = sorted(contributions, reverse=True)[: self._top_k_intensity]
+        top_k = heapq.nlargest(self._top_k_intensity, contributions)
         top_k_mean = sum(top_k) / len(top_k)
         # Rational bounded mapping: x / (x + s), monotonic and explainable.
         return top_k_mean / (top_k_mean + self._opportunity_scale)
