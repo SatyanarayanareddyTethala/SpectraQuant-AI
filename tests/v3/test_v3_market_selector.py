@@ -29,7 +29,11 @@ from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
     MarketSelector,
     MarketSelectorDecision,
+    DecisionRationale,
     ScoredRecord,
+    SelectorRegimes,
+    SelectorRiskFlags,
+    TopContributingEvent,
 )
 
 
@@ -113,9 +117,10 @@ class TestMarketSelectorContract:
     def test_rationale_is_populated(self) -> None:
         sel = MarketSelector()
         decision = sel.score([_equity()])
-        assert decision.rationale != ""
-        assert "equity_score" in decision.rationale
-        assert "crypto_score" in decision.rationale
+        assert isinstance(decision.rationale, DecisionRationale)
+        assert decision.rationale.primary_reason != ""
+        assert any("equity_score" in r for r in decision.rationale.secondary_reasons)
+        assert any("crypto_score" in r for r in decision.rationale.secondary_reasons)
 
     def test_threshold_fields_match_config(self) -> None:
         cfg = {"min_score_to_run": 0.25, "both_threshold": 0.70}
@@ -207,7 +212,8 @@ class TestRegimeHandling:
     def test_panic_veto_reported_in_rationale(self) -> None:
         sel = MarketSelector()
         decision = sel.score([_equity()], regime_label="PANIC")
-        assert "PANIC" in decision.rationale or "vetoed" in decision.rationale.lower()
+        assert "PANIC" in decision.veto_flags
+        assert "veto_flags" in decision.rationale.primary_reason
 
     def test_risk_off_reduces_scores(self) -> None:
         """RISK_OFF multiplies both scores by 0.5."""
@@ -247,6 +253,18 @@ class TestRegimeHandling:
         normal = sel.score(records, regime_label="UNKNOWN")
         event_driven = sel.score(records, regime_label="EVENT_DRIVEN")
         assert event_driven.equity_score >= normal.equity_score
+
+
+    def test_panic_mode_flag_forces_run_none(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()], risk_flags=SelectorRiskFlags(panic_mode=True))
+        assert decision.route == MarketRoute.RUN_NONE
+        assert "panic_mode" in decision.veto_flags
+
+    def test_risk_off_sets_penalty_flag(self) -> None:
+        sel = MarketSelector()
+        decision = sel.score([_equity()], regimes=SelectorRegimes(global_regime="RISK_OFF"))
+        assert decision.risk_off_penalty_applied is True
 
     def test_event_driven_boost_ratio(self) -> None:
         """EVENT_DRIVEN score should be 1.2× neutral (when not clamped)."""
@@ -495,3 +513,20 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+class TestStructuredRationale:
+    def test_top_contributors_are_structured(self) -> None:
+        sel = MarketSelector(config={"top_n": 2})
+        records = [
+            _equity(impact_score=0.9, confidence=0.9),
+            _crypto(impact_score=0.8, confidence=0.8),
+            _equity(impact_score=0.7, confidence=0.7),
+        ]
+        decision = sel.score(records)
+        contributors = decision.rationale.top_contributing_events
+        assert contributors
+        assert all(isinstance(c, TopContributingEvent) for c in contributors)
+        weights = [c.contribution for c in contributors]
+        assert weights == sorted(weights, reverse=True)
+

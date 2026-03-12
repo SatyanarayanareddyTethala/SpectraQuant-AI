@@ -93,6 +93,42 @@ class ScoredRecord:
     """Unscaled per-record contribution before normalisation."""
 
 
+@dataclass(frozen=True)
+class SelectorRegimes:
+    """Typed regime structure for selector scoring input."""
+
+    global_regime: str = "UNKNOWN"
+    equity: str = "UNKNOWN"
+    crypto: str = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class SelectorRiskFlags:
+    """Typed risk flags for selector scoring input."""
+
+    panic_mode: bool = False
+    high_cross_asset_stress: bool = False
+
+
+@dataclass
+class TopContributingEvent:
+    """Top event contribution in final decision rationale."""
+
+    canonical_symbol: str
+    asset: str
+    event_type: str
+    contribution: float
+
+
+@dataclass
+class DecisionRationale:
+    """Structured explanation payload for selector decisions."""
+
+    primary_reason: str
+    secondary_reasons: list[str] = field(default_factory=list)
+    top_contributing_events: list[TopContributingEvent] = field(default_factory=list)
+
+
 @dataclass
 class MarketSelectorDecision:
     """Output of :meth:`MarketSelector.score`.
@@ -112,7 +148,10 @@ class MarketSelectorDecision:
             regardless of scores.
         threshold_used:      The ``min_score_to_run`` threshold applied.
         both_threshold_used: The ``both_threshold`` applied.
-        rationale:           Human-readable score breakdown.
+        veto_flags:          Deterministic veto flags that were triggered.
+        risk_off_penalty_applied:
+                             ``True`` when RISK_OFF penalty is applied.
+        rationale:           Structured decision rationale.
         scored_at:           ISO-8601 UTC timestamp of the scoring call.
         top_equity_records:  Up to ``top_n`` highest-contributing equity
             records for explainability.
@@ -130,7 +169,9 @@ class MarketSelectorDecision:
     regime_vetoed: bool
     threshold_used: float
     both_threshold_used: float
-    rationale: str
+    veto_flags: list[str]
+    risk_off_penalty_applied: bool
+    rationale: DecisionRationale
     scored_at: str
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
     top_crypto_records: list[ScoredRecord] = field(default_factory=list)
@@ -193,6 +234,8 @@ class MarketSelector:
         records: list[NewsIntelligenceRecord],
         *,
         regime_label: str = "UNKNOWN",
+        regimes: SelectorRegimes | None = None,
+        risk_flags: SelectorRiskFlags | None = None,
     ) -> MarketSelectorDecision:
         """Score *records* and return a routing decision.
 
@@ -202,8 +245,13 @@ class MarketSelector:
             Provider-agnostic news intelligence records.  May be empty.
         regime_label:
             Optional market regime string, e.g. ``"PANIC"``, ``"RISK_OFF"``,
-            ``"EVENT_DRIVEN"``.  Case-sensitive (upper-case convention from
-            V2 ``regime_engine.py``).  Unknown values are treated as neutral.
+            ``"EVENT_DRIVEN"``.  Unknown values are treated as neutral.
+        regimes:
+            Typed regimes input with ``global_regime``, ``equity``, and
+            ``crypto`` labels.
+        risk_flags:
+            Typed risk flags input with ``panic_mode`` and
+            ``high_cross_asset_stress`` booleans.
 
         Returns
         -------
@@ -212,6 +260,9 @@ class MarketSelector:
             contributing records.
         """
         scored_at = datetime.now(tz=timezone.utc).isoformat()
+        typed_regimes = regimes or SelectorRegimes(global_regime=regime_label)
+        typed_risk_flags = risk_flags or SelectorRiskFlags()
+        effective_global_regime = typed_regimes.global_regime or regime_label
 
         # 1. Partition by asset class
         equity_records = [r for r in records if r.asset == "equity"]
@@ -221,15 +272,22 @@ class MarketSelector:
         equity_weights, equity_score_raw = self._score_records(equity_records, "equity")
         crypto_weights, crypto_score_raw = self._score_records(crypto_records, "crypto")
 
-        # 3. Apply regime multipliers (before veto check)
-        regime_upper = regime_label.upper()
-        regime_vetoed = regime_upper in _VETO_REGIMES
+        # 3. Apply deterministic regime modifiers and vetoes
+        regime_upper = effective_global_regime.upper()
+        veto_flags: list[str] = []
+        if regime_upper in _VETO_REGIMES:
+            veto_flags.append("PANIC")
+        if typed_risk_flags.panic_mode:
+            veto_flags.append("panic_mode")
+
+        regime_vetoed = len(veto_flags) > 0
         multiplier = _REGIME_MULTIPLIERS.get(regime_upper, 1.0)
+        risk_off_penalty_applied = regime_upper == "RISK_OFF"
 
         equity_score = min(equity_score_raw * multiplier, 1.0)
         crypto_score = min(crypto_score_raw * multiplier, 1.0)
 
-        # 4. Regime veto → RUN_NONE regardless of scores
+        # 4. Veto → RUN_NONE regardless of scores
         if regime_vetoed:
             route = MarketRoute.RUN_NONE
         else:
@@ -239,16 +297,20 @@ class MarketSelector:
         top_equity = self._top_records(equity_records, equity_weights)
         top_crypto = self._top_records(crypto_records, crypto_weights)
 
-        # 6. Build rationale string
+        # 6. Build structured rationale
         rationale = self._build_rationale(
             route=route,
             equity_score=equity_score,
             crypto_score=crypto_score,
             equity_records=equity_records,
             crypto_records=crypto_records,
-            regime_label=regime_label,
-            regime_vetoed=regime_vetoed,
+            regimes=typed_regimes,
+            risk_flags=typed_risk_flags,
+            veto_flags=veto_flags,
+            risk_off_penalty_applied=risk_off_penalty_applied,
             multiplier=multiplier,
+            top_equity_records=top_equity,
+            top_crypto_records=top_crypto,
         )
 
         return MarketSelectorDecision(
@@ -258,10 +320,12 @@ class MarketSelector:
             equity_record_count=len(equity_records),
             crypto_record_count=len(crypto_records),
             record_count=len(records),
-            regime_label=regime_label,
+            regime_label=effective_global_regime,
             regime_vetoed=regime_vetoed,
             threshold_used=self._min_score,
             both_threshold_used=self._both_threshold,
+            veto_flags=veto_flags,
+            risk_off_penalty_applied=risk_off_penalty_applied,
             rationale=rationale,
             scored_at=scored_at,
             top_equity_records=top_equity,
@@ -399,23 +463,66 @@ class MarketSelector:
         crypto_score: float,
         equity_records: list[NewsIntelligenceRecord],
         crypto_records: list[NewsIntelligenceRecord],
-        regime_label: str,
-        regime_vetoed: bool,
+        regimes: SelectorRegimes,
+        risk_flags: SelectorRiskFlags,
+        veto_flags: list[str],
+        risk_off_penalty_applied: bool,
         multiplier: float,
-    ) -> str:
-        """Construct a deterministic, human-readable rationale string."""
-        parts: list[str] = [f"route={route.value}"]
-        parts.append(
-            f"equity_score={equity_score:.4f} "
-            f"({len(equity_records)} record(s))"
+        top_equity_records: list[ScoredRecord],
+        top_crypto_records: list[ScoredRecord],
+    ) -> DecisionRationale:
+        """Construct deterministic structured rationale payload."""
+        primary_reason = f"route={route.value}"
+        if veto_flags:
+            primary_reason = f"route={route.value}; veto_flags={','.join(veto_flags)}"
+
+        secondary_reasons = [
+            f"equity_score={equity_score:.4f} ({len(equity_records)} record(s))",
+            f"crypto_score={crypto_score:.4f} ({len(crypto_records)} record(s))",
+            (
+                "regimes="
+                f"global:{regimes.global_regime},"
+                f"equity:{regimes.equity},"
+                f"crypto:{regimes.crypto}"
+            ),
+            (
+                "risk_flags="
+                f"panic_mode:{risk_flags.panic_mode},"
+                f"high_cross_asset_stress:{risk_flags.high_cross_asset_stress}"
+            ),
+        ]
+        if risk_off_penalty_applied:
+            secondary_reasons.append("risk_off_penalty_applied=True")
+        if multiplier != 1.0:
+            secondary_reasons.append(f"regime_multiplier={multiplier:.2f}")
+
+        ranked = sorted(
+            [
+                *[
+                    TopContributingEvent(
+                        canonical_symbol=r.canonical_symbol,
+                        asset=r.asset,
+                        event_type=r.event_type,
+                        contribution=r.raw_weight,
+                    )
+                    for r in top_equity_records
+                ],
+                *[
+                    TopContributingEvent(
+                        canonical_symbol=r.canonical_symbol,
+                        asset=r.asset,
+                        event_type=r.event_type,
+                        contribution=r.raw_weight,
+                    )
+                    for r in top_crypto_records
+                ],
+            ],
+            key=lambda rec: rec.contribution,
+            reverse=True,
         )
-        parts.append(
-            f"crypto_score={crypto_score:.4f} "
-            f"({len(crypto_records)} record(s))"
+
+        return DecisionRationale(
+            primary_reason=primary_reason,
+            secondary_reasons=secondary_reasons,
+            top_contributing_events=ranked,
         )
-        parts.append(f"regime={regime_label}")
-        if regime_vetoed:
-            parts.append("regime_vetoed=True (PANIC → RUN_NONE)")
-        elif multiplier != 1.0:
-            parts.append(f"regime_multiplier={multiplier:.2f}")
-        return "; ".join(parts)
