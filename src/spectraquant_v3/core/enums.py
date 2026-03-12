@@ -12,6 +12,7 @@ class AssetClass(str, Enum):
 
     CRYPTO = "crypto"
     EQUITY = "equity"
+    FOREX = "forex"
 
 
 class RunMode(str, Enum):

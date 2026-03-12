@@ -26,6 +26,7 @@ from spectraquant_v3.cli.commands.feature_store import feature_store_app
 from spectraquant_v3.cli.commands.research import research_app
 from spectraquant_v3.cli.commands.strategy import strategy_app
 from spectraquant_v3.cli.commands.strategy_portfolio import strategy_portfolio_app
+from spectraquant_v3.cli.commands.universe import universe_app
 
 app = typer.Typer(
     name="sqv3",
@@ -53,6 +54,9 @@ app.add_typer(experiment_app, name="experiment")
 # Register feature store and strategy portfolio sub-applications
 app.add_typer(feature_store_app, name="feature-store")
 app.add_typer(strategy_portfolio_app, name="strategy-portfolio")
+
+# Register universe sub-application
+app.add_typer(universe_app, name="universe")
 
 
 # ---------------------------------------------------------------------------

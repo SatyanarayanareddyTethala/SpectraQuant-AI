@@ -126,3 +126,20 @@ class ContractViolationError(SpectraQuantError):
     than raising, to keep execution paths robust.  This error is reserved for
     callers that need to enforce strict contract compliance.
     """
+
+
+# ---------------------------------------------------------------------------
+# Universe
+# ---------------------------------------------------------------------------
+
+
+class UniverseValidationError(SpectraQuantError):
+    """Raised when the hybrid universe CSV fails schema or content validation.
+
+    Example triggers:
+    - A required column (e.g. ``symbol``, ``asset_class``) is missing.
+    - A row has an empty ``symbol`` field.
+    - An unrecognised ``asset_class`` value is encountered.
+    - The universe contains more than 150 assets.
+    - Duplicate ``symbol`` entries are detected (after deduplication is disallowed).
+    """

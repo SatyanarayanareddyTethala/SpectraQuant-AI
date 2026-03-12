@@ -31,7 +31,7 @@ def equity_run(
     """
     from spectraquant_v3.core.config import get_equity_config
     from spectraquant_v3.core.enums import RunMode
-    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError
+    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError, UniverseValidationError
     from spectraquant_v3.pipeline.equity_pipeline import run_equity_pipeline
 
     try:
@@ -45,6 +45,22 @@ def equity_run(
     except FileNotFoundError as exc:
         typer.echo(f"[equity run] ERROR: {exc}", err=True)
         raise typer.Exit(1)
+
+    # Inject hybrid universe symbols when a universe file is configured.
+    universe_file = cfg.get("universe", {}).get("file", "")
+    if universe_file:
+        from spectraquant_v3.core.universe_loader import inject_universe_into_config
+
+        try:
+            cfg, _universe = inject_universe_into_config(cfg, universe_file)
+            equity_count = len(_universe.get("equities", []))
+            typer.echo(
+                f"[equity run] Loaded hybrid universe from {universe_file!r} "
+                f"({equity_count} equity symbols)"
+            )
+        except (FileNotFoundError, UniverseValidationError) as exc:
+            typer.echo(f"[equity run] Universe ERROR: {exc}", err=True)
+            raise typer.Exit(1)
 
     typer.echo(f"[equity run] mode={mode} dry_run={dry_run} – starting pipeline …")
     try:

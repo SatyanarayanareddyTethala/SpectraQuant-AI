@@ -60,3 +60,12 @@ portfolio:
   max_turnover: 0.30
   concentration_limit: 0.40 # top-N weight cap
   rebalance_frequency: daily
+
+# ---------------------------------------------------------------------------
+# Universe (hybrid: equities + crypto + FX)
+# ---------------------------------------------------------------------------
+universe:
+  # Path to the hybrid universe CSV file (relative to repo root).
+  # Set to empty string or omit to use the per-asset-class symbols from
+  # equities.yaml / crypto.yaml instead of the hybrid file.
+  file: data/universe/hybrid_universe.csv
