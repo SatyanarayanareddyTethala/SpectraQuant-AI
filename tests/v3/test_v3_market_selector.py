@@ -485,8 +485,10 @@ class TestConfigThresholds:
     """Verify threshold parameters are respected."""
 
     def test_custom_min_score_to_run(self) -> None:
-        """Setting a very high threshold should force RUN_NONE on moderate signals."""
-        sel = MarketSelector(config={"min_score_to_run": 0.99})
+        """Setting a very high floor should force RUN_NONE on moderate signals."""
+        sel = MarketSelector(
+            config={"low_opportunity_floor": 0.99, "high_opportunity_threshold": 0.99}
+        )
         records = [_equity(impact_score=0.8, confidence=0.8)]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_NONE
@@ -508,6 +510,36 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+    def test_negative_low_opportunity_floor_raises(self) -> None:
+        """Negative low_opportunity_floor must raise ValueError."""
+        with pytest.raises(ValueError, match="low_opportunity_floor"):
+            MarketSelector(config={"low_opportunity_floor": -0.1})
+
+    def test_negative_high_opportunity_threshold_raises(self) -> None:
+        """Negative high_opportunity_threshold must raise ValueError."""
+        with pytest.raises(ValueError, match="high_opportunity_threshold"):
+            MarketSelector(config={"high_opportunity_threshold": -0.1})
+
+    def test_floor_above_high_threshold_raises(self) -> None:
+        """low_opportunity_floor > high_opportunity_threshold must raise ValueError."""
+        with pytest.raises(ValueError, match="low_opportunity_floor"):
+            MarketSelector(
+                config={
+                    "low_opportunity_floor": 0.80,
+                    "high_opportunity_threshold": 0.50,
+                }
+            )
+
+    def test_negative_both_margin_raises(self) -> None:
+        """Negative both_margin must raise ValueError."""
+        with pytest.raises(ValueError, match="both_margin"):
+            MarketSelector(config={"both_margin": -0.05})
+
+    def test_negative_minimum_score_gap_raises(self) -> None:
+        """Negative minimum_score_gap must raise ValueError."""
+        with pytest.raises(ValueError, match="minimum_score_gap"):
+            MarketSelector(config={"minimum_score_gap": -0.05})
 
 
 class TestDecisionOrder:
