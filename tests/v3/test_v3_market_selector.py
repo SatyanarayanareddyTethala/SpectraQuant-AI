@@ -258,6 +258,20 @@ class TestScoringAndDeterminism:
         assert base_decision.equity_score == pytest.approx(variant_decision.equity_score)
         assert base_decision.route == variant_decision.route
 
+    def test_malformed_event_timestamp_degrades_gracefully(self) -> None:
+        selector = MarketSelector()
+        malformed = _event(
+            canonical_symbol="INFY.NS",
+            asset="equity",
+            event_type="EARNINGS",
+            timestamp="not-a-timestamp",
+        )
+
+        decision = selector.score_input(_selector_input([malformed]))
+
+        assert decision.route in list(MarketRoute)
+        assert decision.equity_score >= 0.0
+
     def test_top_contributing_events_are_present_and_sorted(self) -> None:
         selector = MarketSelector()
         events = [
@@ -283,13 +297,21 @@ class TestAffinityAndSerialization:
         assert get_event_asset_affinity("totally_new_event", "equity") == pytest.approx(0.50)
 
     def test_json_serialization_round_trip_is_stable(self) -> None:
+        config = MarketSelectorConfig(
+            low_opportunity_floor=0.20,
+            high_opportunity_threshold=0.60,
+            both_margin=0.12,
+            minimum_score_gap=0.09,
+            recency_half_life_hours_equity=24.0,
+            recency_half_life_hours_crypto=6.0,
+        )
         decision = MarketSelectorDecision(
             as_of_utc="2026-03-11T09:00:00+00:00",
             decision=MarketRoute.RUN_EQUITIES,
             scores=ScoreBreakdown(0.64, 0.31),
-            thresholds=MarketSelectorConfig(),
+            thresholds=config,
             regimes=MarketRegimes(global_regime="NORMAL", equity_regime="EVENT_DRIVEN", crypto_regime="RISK_OFF"),
-            veto_flags=VetoFlags(panic_veto=False, risk_off_penalty_applied=True),
+            veto_flags=VetoFlags(panic_veto=False, risk_penalty_applied=True),
             rationale=SelectorRationale(
                 primary_reason="Equity catalysts are stronger.",
                 secondary_reasons=["Positive earnings surprise."],
@@ -320,6 +342,26 @@ class TestAffinityAndSerialization:
         assert restored.to_dict() == payload
         assert restored.decision == MarketRoute.RUN_EQUITIES
         assert restored.rationale.top_contributing_events[0].canonical_symbol == "INFY.NS"
+        assert restored.thresholds.recency_half_life_hours_equity == pytest.approx(24.0)
+        assert restored.thresholds.recency_half_life_hours_crypto == pytest.approx(6.0)
+        assert restored.veto_flags.risk_penalty_applied is True
+        assert restored.veto_flags.risk_off_penalty_applied is True
+
+    def test_unknown_route_value_falls_back_to_run_none(self) -> None:
+        restored = MarketSelectorDecision.from_dict(
+            {
+                "as_of_utc": "2026-03-11T09:00:00+00:00",
+                "decision": "RUN_SOMETHING_NEW",
+                "scores": {},
+                "thresholds": {},
+                "regimes": {},
+                "veto_flags": {},
+                "rationale": {},
+                "version": "v1",
+            }
+        )
+
+        assert restored.decision == MarketRoute.RUN_NONE
 
     def test_input_round_trip_uses_contract_shape(self) -> None:
         selector_input = _selector_input(

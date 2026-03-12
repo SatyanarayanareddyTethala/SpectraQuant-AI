@@ -70,7 +70,10 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
     text = str(value).strip()
     if not text:
         return None
-    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
@@ -113,7 +116,10 @@ def _route_from_raw(value: str | MarketRoute) -> MarketRoute:
         return MarketRoute.RUN_NONE
     if text in MarketRoute.__members__:
         return MarketRoute[text]
-    return MarketRoute(text.lower())
+    try:
+        return MarketRoute(text.lower())
+    except ValueError:
+        return MarketRoute.RUN_NONE
 
 
 @dataclass(frozen=True)
@@ -336,20 +342,36 @@ class SelectorRationale:
 @dataclass(frozen=True)
 class VetoFlags:
     panic_veto: bool = False
+    risk_penalty_applied: bool = False
     risk_off_penalty_applied: bool = False
+
+    def __post_init__(self) -> None:
+        effective_risk_penalty = bool(
+            self.risk_penalty_applied or self.risk_off_penalty_applied
+        )
+        object.__setattr__(self, "risk_penalty_applied", effective_risk_penalty)
+        object.__setattr__(self, "risk_off_penalty_applied", effective_risk_penalty)
 
     def to_dict(self) -> dict[str, bool]:
         return {
             "panic_veto": bool(self.panic_veto),
+            "risk_penalty_applied": bool(self.risk_penalty_applied),
             "risk_off_penalty_applied": bool(self.risk_off_penalty_applied),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any] | None) -> VetoFlags:
         data = payload or {}
+        effective_risk_penalty = bool(
+            data.get(
+                "risk_penalty_applied",
+                data.get("risk_off_penalty_applied", False),
+            )
+        )
         return cls(
             panic_veto=bool(data.get("panic_veto", False)),
-            risk_off_penalty_applied=bool(data.get("risk_off_penalty_applied", False)),
+            risk_penalty_applied=effective_risk_penalty,
+            risk_off_penalty_applied=effective_risk_penalty,
         )
 
 
@@ -385,12 +407,7 @@ class MarketSelectorDecision:
             "as_of_utc": self.as_of_utc,
             "decision": self.decision.name,
             "scores": self.scores.to_dict(),
-            "thresholds": {
-                "low_opportunity_floor": _round_float(self.thresholds.low_opportunity_floor),
-                "high_opportunity_threshold": _round_float(self.thresholds.high_opportunity_threshold),
-                "both_margin": _round_float(self.thresholds.both_margin),
-                "minimum_score_gap": _round_float(self.thresholds.minimum_score_gap),
-            },
+            "thresholds": self.thresholds.to_dict(),
             "regimes": self.regimes.to_dict(),
             "veto_flags": self.veto_flags.to_dict(),
             "rationale": self.rationale.to_dict(),
@@ -507,6 +524,7 @@ class MarketSelector:
             regimes=regimes,
             veto_flags=VetoFlags(
                 panic_veto=panic_veto,
+                risk_penalty_applied=equity_penalty or crypto_penalty,
                 risk_off_penalty_applied=equity_penalty or crypto_penalty,
             ),
             rationale=rationale,
