@@ -19,18 +19,35 @@ _DEFAULT_REFERENCE_TIME = "1970-01-01T00:00:00+00:00"
 _DEFAULT_TOP_CONTRIBUTORS = 5
 _TOP_K_INTENSITY = 3
 _UNKNOWN_EVENT_TYPE = "UNKNOWN"
+_BREADTH_NORMALIZATION_FACTOR = 3.0
+_TOP_EVENT_WEIGHT = 0.85
+_SECOND_EVENT_WEIGHT = 0.10
+_THIRD_EVENT_WEIGHT = 0.05
+_INTENSITY_SCORE_WEIGHT = 0.90
+_BREADTH_SCORE_WEIGHT = 0.10
+_BREADTH_CUTOFF_FLOOR_MULTIPLIER = 0.50
+_WEAK_EVENT_THRESHOLD_DIVISOR = 2.0
+_MIN_BREADTH_CUTOFF = 0.05
+_MAX_NOISE_PENALTY = 0.05
+_RISK_OFF_MULTIPLIER = 0.75
+_CROSS_ASSET_STRESS_MULTIPLIER = 0.90
+_EVENT_DRIVEN_MULTIPLIER = 1.10
 
 EVENT_ASSET_AFFINITY: dict[str, dict[str, float]] = {
     "EARNINGS": {"equity": 1.00, "crypto": 0.05},
     "GUIDANCE": {"equity": 0.95, "crypto": 0.05},
     "M_AND_A": {"equity": 0.90, "crypto": 0.10},
+    "CORPORATE_ACTION": {"equity": 0.80, "crypto": 0.05},
     "DIVIDEND": {"equity": 0.85, "crypto": 0.00},
     "ANALYST": {"equity": 0.75, "crypto": 0.10},
     "MACRO": {"equity": 0.60, "crypto": 0.80},
     "REGULATORY": {"equity": 0.50, "crypto": 0.85},
     "PROTOCOL_UPGRADE": {"equity": 0.05, "crypto": 0.95},
+    "LISTING": {"equity": 0.10, "crypto": 0.90},
     "EXCHANGE_HACK": {"equity": 0.00, "crypto": 1.00},
+    "SECURITY_INCIDENT": {"equity": 0.30, "crypto": 0.75},
     "ONCHAIN": {"equity": 0.00, "crypto": 0.95},
+    "OPERATIONS_DISRUPTION": {"equity": 0.70, "crypto": 0.20},
     "SECTOR_THEME": {"equity": 0.70, "crypto": 0.55},
     "SOCIAL_BUZZ": {"equity": 0.20, "crypto": 0.45},
     _UNKNOWN_EVENT_TYPE: {"equity": 0.50, "crypto": 0.50},
@@ -39,10 +56,6 @@ EVENT_ASSET_AFFINITY: dict[str, dict[str, float]] = {
 _EVENT_TYPE_ALIASES: dict[str, str] = {
     "M&A": "M_AND_A",
     "MERGERS_AND_ACQUISITIONS": "M_AND_A",
-    "LISTING": "REGULATORY",
-    "SECURITY_INCIDENT": "EXCHANGE_HACK",
-    "CORPORATE_ACTION": "DIVIDEND",
-    "OPERATIONS_DISRUPTION": "SECTOR_THEME",
     "REGULATION": "REGULATORY",
 }
 
@@ -65,6 +78,17 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
 
 def _serialize_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _normalize_iso_datetime_string(value: str | None, *, default: str | None = None) -> str:
+    parsed = _parse_iso_datetime(value)
+    if parsed is not None:
+        return _serialize_datetime(parsed)
+    if default is not None:
+        fallback = _parse_iso_datetime(default)
+        if fallback is not None:
+            return _serialize_datetime(fallback)
+    raise ValueError(f"Invalid ISO-8601 timestamp: {value!r}")
 
 
 def canonicalize_event_type(event_type: str | None) -> str:
@@ -220,7 +244,7 @@ class MarketSelectorInput:
         if as_of_value is None:
             as_of_value = _derive_reference_time(events)
         else:
-            as_of_value = _serialize_datetime(_parse_iso_datetime(str(as_of_value)) or _parse_iso_datetime(_DEFAULT_REFERENCE_TIME))
+            as_of_value = _normalize_iso_datetime_string(str(as_of_value), default=_DEFAULT_REFERENCE_TIME)
         return cls(
             as_of_utc=str(as_of_value),
             news_events=events,
@@ -425,15 +449,12 @@ class MarketSelector:
         as_of_dt = _parse_iso_datetime(selector_input.as_of_utc)
         if as_of_dt is None:
             as_of_dt = _parse_iso_datetime(_derive_reference_time(selector_input.news_events))
-        assert as_of_dt is not None
+        if as_of_dt is None:
+            raise ValueError(f"Could not determine selector reference time from {selector_input.as_of_utc!r}")
         as_of_utc = _serialize_datetime(as_of_dt)
 
         regimes = selector_input.regimes.normalized()
-        panic_veto = selector_input.risk_flags.panic_mode or "PANIC" in {
-            regimes.global_regime,
-            regimes.equity_regime,
-            regimes.crypto_regime,
-        }
+        panic_veto = selector_input.risk_flags.panic_mode or self._is_panic_regime(regimes)
 
         equity_result, equity_penalty = self._score_asset_class(
             asset_class="equity",
@@ -555,6 +576,13 @@ class MarketSelector:
             else config.recency_half_life_hours_crypto
         )
         recency_weight = 0.5 ** (age_hours / half_life)
+        # NewsIntelligenceRecord clamps sentiment_score into [-1.0, 1.0].
+        # The selector is opportunity-oriented rather than direction-oriented:
+        # strongly negative catalyst tone can still imply a strong short or
+        # risk-management opportunity, so V1 uses absolute sentiment magnitude.
+        # Formula: sentiment_factor = 0.5 + 0.5 * |sentiment_score|.
+        # This keeps the factor bounded in [0.5, 1.0], where neutral sentiment
+        # still preserves half of the event's base contribution.
         sentiment_factor = 0.5 + 0.5 * abs(float(record.sentiment_score))
         affinity = get_event_asset_affinity(record.event_type, asset_class)
         contribution = (
@@ -577,12 +605,25 @@ class MarketSelector:
         top_k = ranked[:_TOP_K_INTENSITY]
         while len(top_k) < _TOP_K_INTENSITY:
             top_k.append(0.0)
-        intensity = (0.85 * top_k[0]) + (0.10 * top_k[1]) + (0.05 * top_k[2])
-        breadth_cutoff = max(config.low_opportunity_floor * 0.5, 0.05)
-        breadth = min(sum(1 for item in contributions if item >= breadth_cutoff) / 3.0, 1.0)
-        weak_ratio = sum(1 for item in contributions if item < breadth_cutoff / 2.0) / max(len(contributions), 1)
-        noise_penalty = min(weak_ratio * 0.05, 0.05)
-        score = (0.90 * intensity) + (0.10 * breadth) - noise_penalty
+        intensity = (
+            (_TOP_EVENT_WEIGHT * top_k[0])
+            + (_SECOND_EVENT_WEIGHT * top_k[1])
+            + (_THIRD_EVENT_WEIGHT * top_k[2])
+        )
+        breadth_cutoff = max(
+            config.low_opportunity_floor * _BREADTH_CUTOFF_FLOOR_MULTIPLIER,
+            _MIN_BREADTH_CUTOFF,
+        )
+        breadth = min(
+            sum(1 for item in contributions if item >= breadth_cutoff)
+            / _BREADTH_NORMALIZATION_FACTOR,
+            1.0,
+        )
+        weak_ratio = sum(
+            1 for item in contributions if item < breadth_cutoff / _WEAK_EVENT_THRESHOLD_DIVISOR
+        ) / max(len(contributions), 1)
+        noise_penalty = min(weak_ratio * _MAX_NOISE_PENALTY, _MAX_NOISE_PENALTY)
+        score = (_INTENSITY_SCORE_WEIGHT * intensity) + (_BREADTH_SCORE_WEIGHT * breadth) - noise_penalty
         return max(0.0, min(1.0, score))
 
     def _apply_regime_modifiers(
@@ -597,16 +638,34 @@ class MarketSelector:
         risk_off_penalty_applied = False
         applicable_regimes = {regimes.global_regime, regimes.for_asset(asset_class)}
 
-        if "RISK_OFF" in applicable_regimes:
-            multiplier *= 0.75
+        if self._has_regime(applicable_regimes, "RISK_OFF"):
+            # V1 keeps the penalty meaningful but not absolute so a very strong
+            # catalyst cluster can still surface as actionable.
+            multiplier *= _RISK_OFF_MULTIPLIER
             risk_off_penalty_applied = True
         if risk_flags.high_cross_asset_stress:
-            multiplier *= 0.90
+            multiplier *= _CROSS_ASSET_STRESS_MULTIPLIER
             risk_off_penalty_applied = True
-        if "EVENT_DRIVEN" in applicable_regimes:
-            multiplier *= 1.10
+        if self._has_regime(applicable_regimes, "EVENT_DRIVEN"):
+            # Use only a modest boost so regime context helps ordering without
+            # overwhelming the underlying event-intensity score.
+            multiplier *= _EVENT_DRIVEN_MULTIPLIER
 
         return max(0.0, min(1.0, base_score * multiplier)), risk_off_penalty_applied
+
+    @staticmethod
+    def _has_regime(regimes: set[str], regime_name: str) -> bool:
+        return regime_name in regimes
+
+    def _is_panic_regime(self, regimes: MarketRegimes) -> bool:
+        return self._has_regime(
+            {
+                regimes.global_regime,
+                regimes.equity_regime,
+                regimes.crypto_regime,
+            },
+            "PANIC",
+        )
 
     def _decide_route(
         self,
@@ -680,6 +739,9 @@ class MarketSelector:
             key=lambda item: (item.contribution, item.canonical_symbol, item.asset, item.event_type),
             reverse=True,
         )
+        # Secondary keys (canonical_symbol, asset, event_type) keep identical
+        # contributions deterministic across Python versions and runs without
+        # needing any provider- or insertion-order dependence.
         deduped: list[ContributingEventSummary] = []
         seen: set[tuple[str, str, str]] = set()
         for event in ranked:
