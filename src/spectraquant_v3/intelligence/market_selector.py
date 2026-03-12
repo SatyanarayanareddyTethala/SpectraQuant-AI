@@ -341,11 +341,19 @@ class SelectorRationale:
 
 @dataclass(frozen=True)
 class VetoFlags:
+    """Structured veto/risk-penalty flags for selector output.
+
+    ``risk_penalty_applied`` is the broader V1 flag. The legacy
+    ``risk_off_penalty_applied`` alias is kept in sync for compatibility.
+    """
+
     panic_veto: bool = False
     risk_penalty_applied: bool = False
     risk_off_penalty_applied: bool = False
 
     def __post_init__(self) -> None:
+        # The broad flag and legacy alias intentionally collapse to one
+        # effective value so serialized payloads remain backwards compatible.
         effective_risk_penalty = bool(
             self.risk_penalty_applied or self.risk_off_penalty_applied
         )
