@@ -112,6 +112,8 @@ class MarketSelectorDecision:
             regardless of scores.
         threshold_used:      The ``min_score_to_run`` threshold applied.
         both_threshold_used: The ``both_threshold`` applied.
+        thresholds:          Named routing thresholds used by the decision
+            logic.
         rationale:           Human-readable score breakdown.
         scored_at:           ISO-8601 UTC timestamp of the scoring call.
         top_equity_records:  Up to ``top_n`` highest-contributing equity
@@ -130,6 +132,7 @@ class MarketSelectorDecision:
     regime_vetoed: bool
     threshold_used: float
     both_threshold_used: float
+    thresholds: dict[str, float]
     rationale: str
     scored_at: str
     top_equity_records: list[ScoredRecord] = field(default_factory=list)
@@ -154,8 +157,23 @@ class MarketSelector:
             considered for routing.
 
         ``both_threshold`` (float, default ``0.60``)
-            Score above which both asset classes are considered strong enough
-            to run simultaneously without applying the 1.5× dominance rule.
+            Legacy strong-signal threshold retained for backward compatibility.
+
+        ``low_opportunity_floor`` (float, default value of
+        ``min_score_to_run``)
+            If both scores are below this floor, route to ``RUN_NONE``.
+
+        ``high_opportunity_threshold`` (float, default value of
+        ``both_threshold``)
+            Score considered high-opportunity for each asset class.
+
+        ``both_margin`` (float, default ``0.10``)
+            Maximum absolute score difference for high-opportunity
+            ``RUN_BOTH`` decisions.
+
+        ``minimum_score_gap`` (float, default ``0.15``)
+            Minimum score delta required to break ties and route to a single
+            asset class.
 
         ``half_life_hours`` (float, default ``6.0``)
             Half-life in hours for the exponential recency decay:
@@ -171,6 +189,14 @@ class MarketSelector:
         cfg = config or {}
         self._min_score: float = float(cfg.get("min_score_to_run", 0.35))
         self._both_threshold: float = float(cfg.get("both_threshold", 0.60))
+        self._low_opportunity_floor: float = float(
+            cfg.get("low_opportunity_floor", self._min_score)
+        )
+        self._high_opportunity_threshold: float = float(
+            cfg.get("high_opportunity_threshold", self._both_threshold)
+        )
+        self._both_margin: float = float(cfg.get("both_margin", 0.10))
+        self._minimum_score_gap: float = float(cfg.get("minimum_score_gap", 0.15))
         self._half_life_hours: float = float(cfg.get("half_life_hours", 6.0))
         self._top_n: int = int(cfg.get("top_n", 5))
 
@@ -262,6 +288,12 @@ class MarketSelector:
             regime_vetoed=regime_vetoed,
             threshold_used=self._min_score,
             both_threshold_used=self._both_threshold,
+            thresholds={
+                "low_opportunity_floor": self._low_opportunity_floor,
+                "high_opportunity_threshold": self._high_opportunity_threshold,
+                "both_margin": self._both_margin,
+                "minimum_score_gap": self._minimum_score_gap,
+            },
             rationale=rationale,
             scored_at=scored_at,
             top_equity_records=top_equity,
@@ -343,32 +375,44 @@ class MarketSelector:
     def _decide(self, equity_score: float, crypto_score: float) -> MarketRoute:
         """Apply routing thresholds and return a :class:`MarketRoute`.
 
-        Logic (from audit §5.6):
-        - Both above ``both_threshold``  → ``RUN_BOTH``
-        - Both above ``min_score`` but neither dominates by 1.5×  → ``RUN_BOTH``
-        - Both above ``min_score``, one dominates by 1.5×  → that asset only
-        - Only equity above threshold  → ``RUN_EQUITIES``
-        - Only crypto above threshold  → ``RUN_CRYPTO``
-        - Neither above threshold  → ``RUN_NONE``
+        Decision order:
+        1. (PANIC veto is handled by ``score()`` before this method).
+        2. Both below ``low_opportunity_floor`` -> ``RUN_NONE``.
+        3. Both above ``high_opportunity_threshold`` and within
+           ``both_margin`` -> ``RUN_BOTH``.
+        4. One side above ``high_opportunity_threshold`` and ahead by at least
+           ``minimum_score_gap`` -> route only that side.
+        5. Intermediate tie / near-tie handling: if one side leads by at least
+           ``minimum_score_gap``, route that side, otherwise ``RUN_NONE``.
+        6. Fallback -> ``RUN_NONE``.
         """
-        min_s = self._min_score
-        both_t = self._both_threshold
+        low_floor = self._low_opportunity_floor
+        high_threshold = self._high_opportunity_threshold
+        both_margin = self._both_margin
+        min_gap = self._minimum_score_gap
+        gap = abs(equity_score - crypto_score)
 
-        if equity_score >= both_t and crypto_score >= both_t:
+        if equity_score < low_floor and crypto_score < low_floor:
+            return MarketRoute.RUN_NONE
+
+        if (
+            equity_score >= high_threshold
+            and crypto_score >= high_threshold
+            and gap <= both_margin
+        ):
             return MarketRoute.RUN_BOTH
 
-        if equity_score >= min_s and crypto_score >= min_s:
-            if equity_score >= crypto_score * 1.5:
-                return MarketRoute.RUN_EQUITIES
-            if crypto_score >= equity_score * 1.5:
-                return MarketRoute.RUN_CRYPTO
-            return MarketRoute.RUN_BOTH
-
-        if equity_score >= min_s:
+        if equity_score >= high_threshold and (equity_score - crypto_score) >= min_gap:
             return MarketRoute.RUN_EQUITIES
 
-        if crypto_score >= min_s:
+        if crypto_score >= high_threshold and (crypto_score - equity_score) >= min_gap:
             return MarketRoute.RUN_CRYPTO
+
+        if gap >= min_gap:
+            if equity_score > crypto_score:
+                return MarketRoute.RUN_EQUITIES
+            if crypto_score > equity_score:
+                return MarketRoute.RUN_CRYPTO
 
         return MarketRoute.RUN_NONE
 

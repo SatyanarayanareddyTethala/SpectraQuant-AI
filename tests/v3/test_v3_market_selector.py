@@ -118,11 +118,24 @@ class TestMarketSelectorContract:
         assert "crypto_score" in decision.rationale
 
     def test_threshold_fields_match_config(self) -> None:
-        cfg = {"min_score_to_run": 0.25, "both_threshold": 0.70}
+        cfg = {
+            "min_score_to_run": 0.25,
+            "both_threshold": 0.70,
+            "low_opportunity_floor": 0.20,
+            "high_opportunity_threshold": 0.65,
+            "both_margin": 0.08,
+            "minimum_score_gap": 0.12,
+        }
         sel = MarketSelector(config=cfg)
         decision = sel.score([])
         assert decision.threshold_used == 0.25
         assert decision.both_threshold_used == 0.70
+        assert decision.thresholds == {
+            "low_opportunity_floor": 0.20,
+            "high_opportunity_threshold": 0.65,
+            "both_margin": 0.08,
+            "minimum_score_gap": 0.12,
+        }
 
 
 # ===========================================================================
@@ -478,12 +491,12 @@ class TestConfigThresholds:
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_NONE
 
-    def test_zero_min_score_allows_any_score(self) -> None:
-        """Setting threshold to 0 means any non-zero score qualifies."""
+    def test_zero_min_score_does_not_override_gap_logic(self) -> None:
+        """min_score_to_run=0 does not bypass low/high floor + gap checks."""
         sel = MarketSelector(config={"min_score_to_run": 0.0})
         records = [_equity(impact_score=0.01, confidence=0.01)]
         decision = sel.score(records)
-        assert decision.route != MarketRoute.RUN_NONE
+        assert decision.route == MarketRoute.RUN_NONE
 
     def test_both_threshold_triggers_run_both(self) -> None:
         """When both scores exceed both_threshold, route should be RUN_BOTH."""
@@ -495,3 +508,59 @@ class TestConfigThresholds:
         ]
         decision = sel.score(records)
         assert decision.route == MarketRoute.RUN_BOTH
+
+
+class TestDecisionOrder:
+    """Verify explicit decision ordering in _decide()."""
+
+    def test_both_below_low_floor_returns_none(self) -> None:
+        sel = MarketSelector(config={"low_opportunity_floor": 0.25})
+        records = [
+            _equity(impact_score=0.4, confidence=0.4),
+            _crypto(impact_score=0.4, confidence=0.4),
+        ]
+        decision = sel.score(records)
+        assert decision.equity_score < 0.25
+        assert decision.crypto_score < 0.25
+        assert decision.route == MarketRoute.RUN_NONE
+
+    def test_both_high_within_margin_returns_both(self) -> None:
+        sel = MarketSelector(
+            config={
+                "high_opportunity_threshold": 0.70,
+                "both_margin": 0.10,
+                "minimum_score_gap": 0.05,
+            }
+        )
+        records = [
+            _equity(impact_score=0.9, confidence=0.9),
+            _crypto(impact_score=0.9, confidence=0.9),
+        ]
+        decision = sel.score(records)
+        assert decision.route == MarketRoute.RUN_BOTH
+
+    def test_high_side_with_minimum_gap_routes_single_side(self) -> None:
+        sel = MarketSelector(
+            config={"high_opportunity_threshold": 0.70, "minimum_score_gap": 0.10}
+        )
+        records = [
+            _equity(impact_score=0.95, confidence=0.95),
+            _crypto(impact_score=0.75, confidence=0.75),
+        ]
+        decision = sel.score(records)
+        assert decision.route == MarketRoute.RUN_EQUITIES
+
+    def test_intermediate_near_tie_returns_none(self) -> None:
+        sel = MarketSelector(
+            config={
+                "high_opportunity_threshold": 0.85,
+                "low_opportunity_floor": 0.20,
+                "minimum_score_gap": 0.10,
+            }
+        )
+        records = [
+            _equity(impact_score=0.6, confidence=0.6),
+            _crypto(impact_score=0.55, confidence=0.55),
+        ]
+        decision = sel.score(records)
+        assert decision.route == MarketRoute.RUN_NONE
