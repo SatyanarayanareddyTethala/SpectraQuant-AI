@@ -261,6 +261,19 @@ class TestRegimeHandling:
         assert decision.route == MarketRoute.RUN_NONE
         assert "panic_mode" in decision.veto_flags
 
+    def test_regime_label_panic_not_overridden_by_default_regimes(self) -> None:
+        """regime_label='PANIC' must veto even when regimes=SelectorRegimes() (default UNKNOWN)."""
+        sel = MarketSelector()
+        strong = [_equity(impact_score=1.0, confidence=1.0) for _ in range(5)]
+        decision = sel.score(
+            strong,
+            regime_label="PANIC",
+            regimes=SelectorRegimes(),  # global_regime defaults to "UNKNOWN"
+        )
+        assert decision.route == MarketRoute.RUN_NONE
+        assert decision.regime_vetoed is True
+        assert "PANIC" in decision.veto_flags
+
     def test_risk_off_sets_penalty_flag(self) -> None:
         sel = MarketSelector()
         decision = sel.score([_equity()], regimes=SelectorRegimes(global_regime="RISK_OFF"))

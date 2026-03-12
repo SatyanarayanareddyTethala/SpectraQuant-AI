@@ -262,7 +262,16 @@ class MarketSelector:
         scored_at = datetime.now(tz=timezone.utc).isoformat()
         typed_regimes = regimes or SelectorRegimes(global_regime=regime_label)
         typed_risk_flags = risk_flags or SelectorRiskFlags()
-        effective_global_regime = typed_regimes.global_regime or regime_label
+
+        # Derive an effective global regime:
+        # Treat explicit typed_regimes.global_regime values of "UNKNOWN" (or empty)
+        # as unset, so they do not override a strong regime_label like "PANIC".
+        regime_label_norm = (regime_label or "").strip()
+        raw_global_regime = (typed_regimes.global_regime or "").strip()
+        if raw_global_regime and raw_global_regime.upper() != "UNKNOWN":
+            effective_global_regime = raw_global_regime
+        else:
+            effective_global_regime = regime_label_norm or "UNKNOWN"
 
         # 1. Partition by asset class
         equity_records = [r for r in records if r.asset == "equity"]
@@ -450,7 +459,7 @@ class MarketSelector:
                 canonical_symbol=rec.canonical_symbol,
                 event_type=rec.event_type,
                 asset=rec.asset,
-                raw_weight=round(w, 6),
+                raw_weight=w,
             )
             for w, rec in paired[: self._top_n]
         ]
