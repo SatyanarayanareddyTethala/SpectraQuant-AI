@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Event-type → asset-class affinity table
 # ---------------------------------------------------------------------------
-# Each event type carries an implicit affinity toward equities or crypto.
+# Each canonical event type carries an implicit affinity toward equities or
+# crypto. Keys are intentionally UPPERCASE so lookup can canonicalize all
+# inbound event_type values to a deterministic representation.
 # Adapted from the V2 event_ontology.py taxonomy (Phases 1–6 audit, §4 Idea 2).
 # Values represent the weight multiplier applied to a record's contribution to
 # the per-asset-class score.  All values are in [0.0, 1.0].
@@ -40,23 +42,32 @@ logger = logging.getLogger(__name__)
 
 EVENT_ASSET_AFFINITY: dict[str, dict[str, float]] = {
     # Equity-dominant events
-    "earnings":              {"equity": 1.00, "crypto": 0.05},
-    "m_and_a":               {"equity": 0.90, "crypto": 0.10},
-    "corporate_action":      {"equity": 0.80, "crypto": 0.05},
-    "operations_disruption": {"equity": 0.70, "crypto": 0.20},
+    "EARNINGS":              {"equity": 1.00, "crypto": 0.05},
+    "M_AND_A":               {"equity": 0.90, "crypto": 0.10},
+    "CORPORATE_ACTION":      {"equity": 0.80, "crypto": 0.05},
+    "OPERATIONS_DISRUPTION": {"equity": 0.70, "crypto": 0.20},
     # Cross-asset events (macro affects both; crypto reacts more to rates)
-    "macro":                 {"equity": 0.60, "crypto": 0.80},
-    "risk":                  {"equity": 0.60, "crypto": 0.50},
+    "MACRO":                 {"equity": 0.60, "crypto": 0.80},
+    "RISK":                  {"equity": 0.60, "crypto": 0.50},
     # Crypto-dominant events
-    "regulatory":            {"equity": 0.50, "crypto": 0.85},
-    "listing":               {"equity": 0.10, "crypto": 0.90},
-    "security_incident":     {"equity": 0.30, "crypto": 0.75},
+    "REGULATORY":            {"equity": 0.50, "crypto": 0.85},
+    "LISTING":               {"equity": 0.10, "crypto": 0.90},
+    "SECURITY_INCIDENT":     {"equity": 0.30, "crypto": 0.75},
     # Fallback for unrecognised event types
-    "unknown":               {"equity": 0.50, "crypto": 0.50},
+    "UNKNOWN":               {"equity": 0.50, "crypto": 0.50},
 }
 
 # Default affinity for event types not in the lookup table
 _DEFAULT_AFFINITY: dict[str, float] = {"equity": 0.50, "crypto": 0.50}
+
+# Explicit aliases observed in provider payloads and historical datasets.
+# All aliases must resolve to a canonical key in EVENT_ASSET_AFFINITY.
+_EVENT_TYPE_ALIASES: dict[str, str] = {
+    "M&A": "M_AND_A",
+    "MERGERS_AND_ACQUISITIONS": "M_AND_A",
+    "REGULATION": "REGULATORY",
+    "GENERAL": "UNKNOWN",
+}
 
 # ---------------------------------------------------------------------------
 # Regime multipliers
@@ -218,8 +229,14 @@ class MarketSelector:
         crypto_records = [r for r in records if r.asset == "crypto"]
 
         # 2. Score each asset class
-        equity_weights, equity_score_raw = self._score_records(equity_records, "equity")
-        crypto_weights, crypto_score_raw = self._score_records(crypto_records, "crypto")
+        equity_weights, equity_score_raw, equity_unknown_events = self._score_records(
+            equity_records,
+            "equity",
+        )
+        crypto_weights, crypto_score_raw, crypto_unknown_events = self._score_records(
+            crypto_records,
+            "crypto",
+        )
 
         # 3. Apply regime multipliers (before veto check)
         regime_upper = regime_label.upper()
@@ -249,6 +266,7 @@ class MarketSelector:
             regime_label=regime_label,
             regime_vetoed=regime_vetoed,
             multiplier=multiplier,
+            unknown_event_fallback_count=equity_unknown_events + crypto_unknown_events,
         )
 
         return MarketSelectorDecision(
@@ -295,22 +313,44 @@ class MarketSelector:
             )
             return 1.0
 
-    def _affinity(self, event_type: str, asset_class: str) -> float:
-        """Return the asset-class affinity multiplier for *event_type*."""
-        entry = EVENT_ASSET_AFFINITY.get(event_type, _DEFAULT_AFFINITY)
-        return entry.get(asset_class, 0.5)
+    def _canonical_event_type(self, event_type: str | None) -> str:
+        """Return canonical event type key for affinity lookup.
+
+        Policy:
+        - Normalize by stripping whitespace and uppercasing.
+        - Resolve explicit aliases (e.g. ``REGULATION`` → ``REGULATORY``).
+        - Preserve only canonical keys from ``EVENT_ASSET_AFFINITY``.
+        - Unknown values map to ``UNKNOWN``.
+        """
+        normalized = (event_type or "").strip().upper()
+        if not normalized:
+            return "UNKNOWN"
+        if normalized in EVENT_ASSET_AFFINITY:
+            return normalized
+        return _EVENT_TYPE_ALIASES.get(normalized, "UNKNOWN")
+
+    def _affinity(self, event_type: str, asset_class: str) -> tuple[float, bool]:
+        """Return ``(affinity, used_unknown_fallback)`` for *event_type*.
+
+        Unknown-event policy is explicitly neutral 0.5/0.5 to avoid accidental
+        directional bias when upstream event typing is missing or novel.
+        """
+        canonical = self._canonical_event_type(event_type)
+        used_unknown_fallback = canonical == "UNKNOWN"
+        entry = EVENT_ASSET_AFFINITY.get(canonical, _DEFAULT_AFFINITY)
+        return entry.get(asset_class, 0.5), used_unknown_fallback
 
     def _score_records(
         self,
         records: list[NewsIntelligenceRecord],
         asset_class: str,
-    ) -> tuple[list[float], float]:
+    ) -> tuple[list[float], float, int]:
         """Compute a weighted aggregate score for *records*.
 
         Returns
         -------
-        tuple[list[float], float]
-            ``(per_record_weights, aggregate_score)``
+        tuple[list[float], float, int]
+            ``(per_record_weights, aggregate_score, unknown_event_fallback_count)``
 
             *per_record_weights* has the same length as *records* and contains
             each record's unscaled contribution (used for top-N selection).
@@ -324,21 +364,25 @@ class MarketSelector:
             ``score = sum(w_i) / max(N, 1)``  clipped to ``[0.0, 1.0]``
         """
         if not records:
-            return [], 0.0
+            return [], 0.0, 0
 
         weights: list[float] = []
+        unknown_event_fallback_count = 0
         for rec in records:
+            affinity, used_unknown_fallback = self._affinity(rec.event_type, asset_class)
+            if used_unknown_fallback:
+                unknown_event_fallback_count += 1
             w = (
                 self._recency_weight(rec.timestamp)
                 * rec.impact_score
-                * self._affinity(rec.event_type, asset_class)
+                * affinity
                 * rec.confidence
             )
             weights.append(w)
 
         score = sum(weights) / max(len(weights), 1)
         score = max(0.0, min(1.0, score))
-        return weights, score
+        return weights, score, unknown_event_fallback_count
 
     def _decide(self, equity_score: float, crypto_score: float) -> MarketRoute:
         """Apply routing thresholds and return a :class:`MarketRoute`.
@@ -402,6 +446,7 @@ class MarketSelector:
         regime_label: str,
         regime_vetoed: bool,
         multiplier: float,
+        unknown_event_fallback_count: int,
     ) -> str:
         """Construct a deterministic, human-readable rationale string."""
         parts: list[str] = [f"route={route.value}"]
@@ -418,4 +463,10 @@ class MarketSelector:
             parts.append("regime_vetoed=True (PANIC → RUN_NONE)")
         elif multiplier != 1.0:
             parts.append(f"regime_multiplier={multiplier:.2f}")
+        if unknown_event_fallback_count > 0:
+            parts.append(
+                "unknown_event_fallback="
+                f"{unknown_event_fallback_count} record(s) "
+                "(neutral_affinity=0.50/0.50)"
+            )
         return "; ".join(parts)
