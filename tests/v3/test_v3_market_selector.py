@@ -524,9 +524,23 @@ class TestAsOfAnchoringAndScoringComponents:
 
     def test_sentiment_factor_boosts_extreme_sentiment(self) -> None:
         sel = MarketSelector()
-        neutral = _equity(sentiment_score=0.0, impact_score=0.9, confidence=0.9)
-        extreme = _equity(sentiment_score=1.0, impact_score=0.9, confidence=0.9)
-        assert sel.score([extreme]).equity_score > sel.score([neutral]).equity_score
+        neutral = _equity(
+            timestamp="2025-01-01T00:00:00+00:00",
+            sentiment_score=0.0,
+            impact_score=0.9,
+            confidence=0.9,
+        )
+        extreme = _equity(
+            timestamp="2025-01-01T00:00:00+00:00",
+            sentiment_score=1.0,
+            impact_score=0.9,
+            confidence=0.9,
+        )
+        anchor = "2025-01-01T00:00:00+00:00"
+        assert sel.score([extreme], as_of_utc=anchor).equity_score > sel.score(
+            [neutral],
+            as_of_utc=anchor,
+        ).equity_score
 
     def test_market_selector_input_as_of_utc_is_used(self) -> None:
         sel = MarketSelector()
