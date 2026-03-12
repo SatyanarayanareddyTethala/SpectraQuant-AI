@@ -347,11 +347,11 @@ class TestEventTypeAffinity:
 
     def test_affinity_table_equity_earnings_vs_listing(self) -> None:
         """Within the affinity table, earnings equity > listing equity."""
-        assert EVENT_ASSET_AFFINITY["earnings"]["equity"] > EVENT_ASSET_AFFINITY["listing"]["equity"]
+        assert EVENT_ASSET_AFFINITY["EARNINGS"]["equity"] > EVENT_ASSET_AFFINITY["LISTING"]["equity"]
 
     def test_affinity_table_crypto_listing_vs_earnings(self) -> None:
         """Within the affinity table, listing crypto > earnings crypto."""
-        assert EVENT_ASSET_AFFINITY["listing"]["crypto"] > EVENT_ASSET_AFFINITY["earnings"]["crypto"]
+        assert EVENT_ASSET_AFFINITY["LISTING"]["crypto"] > EVENT_ASSET_AFFINITY["EARNINGS"]["crypto"]
 
     def test_unknown_event_type_gets_default_affinity(self) -> None:
         """Records with unrecognised event_type use the 0.5/0.5 default."""
@@ -366,14 +366,33 @@ class TestEventTypeAffinity:
         # Score should be non-zero (default affinity 0.5)
         assert decision.equity_score > 0.0
 
+
+    def test_event_type_lookup_is_case_insensitive_via_canonicalization(self) -> None:
+        """Mixed-case event_type should map to canonical affinity safely."""
+        sel = MarketSelector()
+        lower = _rec(asset="equity", event_type="earnings", impact_score=0.8, confidence=0.8)
+        upper = _rec(asset="equity", event_type="EARNINGS", impact_score=0.8, confidence=0.8)
+        mixed = _rec(asset="equity", event_type="EaRnInGs", impact_score=0.8, confidence=0.8)
+
+        baseline = sel.score([upper]).equity_score
+        assert sel.score([lower]).equity_score == pytest.approx(baseline, rel=1e-9)
+        assert sel.score([mixed]).equity_score == pytest.approx(baseline, rel=1e-9)
+
+    def test_unknown_event_fallback_is_reported_in_rationale(self) -> None:
+        """Unknown event_type fallback should be explicitly explained."""
+        sel = MarketSelector()
+        decision = sel.score([_rec(asset="equity", event_type="totally_new_event_type")])
+        assert "unknown_event_fallback=1" in decision.rationale
+        assert "neutral_affinity=0.50/0.50" in decision.rationale
+
     def test_macro_contributes_to_both_asset_classes(self) -> None:
         """macro has meaningful affinity for both asset classes."""
-        assert EVENT_ASSET_AFFINITY["macro"]["equity"] > 0.4
-        assert EVENT_ASSET_AFFINITY["macro"]["crypto"] > 0.4
+        assert EVENT_ASSET_AFFINITY["MACRO"]["equity"] > 0.4
+        assert EVENT_ASSET_AFFINITY["MACRO"]["crypto"] > 0.4
 
     def test_regulatory_is_crypto_dominant(self) -> None:
         """regulatory affinity is higher for crypto than equity."""
-        assert EVENT_ASSET_AFFINITY["regulatory"]["crypto"] > EVENT_ASSET_AFFINITY["regulatory"]["equity"]
+        assert EVENT_ASSET_AFFINITY["REGULATORY"]["crypto"] > EVENT_ASSET_AFFINITY["REGULATORY"]["equity"]
 
 
 # ===========================================================================
