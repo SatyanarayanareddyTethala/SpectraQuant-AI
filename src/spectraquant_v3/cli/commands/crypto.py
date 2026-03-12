@@ -31,7 +31,7 @@ def crypto_run(
     """
     from spectraquant_v3.core import config as config_mod
     from spectraquant_v3.core.enums import RunMode
-    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError
+    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError, UniverseValidationError
     from spectraquant_v3.pipeline.crypto_pipeline import run_crypto_pipeline
 
     try:
@@ -45,6 +45,22 @@ def crypto_run(
     except FileNotFoundError as exc:
         typer.echo(f"[crypto run] ERROR: {exc}", err=True)
         raise typer.Exit(1)
+
+    # Inject hybrid universe symbols when a universe file is configured.
+    universe_file = cfg.get("universe", {}).get("file", "")
+    if universe_file:
+        from spectraquant_v3.core.universe_loader import inject_universe_into_config
+
+        try:
+            cfg, _universe = inject_universe_into_config(cfg, universe_file)
+            crypto_count = len(_universe.get("crypto", []))
+            typer.echo(
+                f"[crypto run] Loaded hybrid universe from {universe_file!r} "
+                f"({crypto_count} crypto symbols)"
+            )
+        except (FileNotFoundError, UniverseValidationError) as exc:
+            typer.echo(f"[crypto run] Universe ERROR: {exc}", err=True)
+            raise typer.Exit(1)
 
     typer.echo(f"[crypto run] mode={mode} dry_run={dry_run} – starting pipeline …")
     try:

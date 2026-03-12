@@ -1,0 +1,25 @@
+asset_class,symbol,exchange,sector,liquidity_score,volatility_score,notes
+equity,RELIANCE.NS,NSE,energy,high,medium,Nifty 50 constituent
+equity,HDFCBANK.NS,NSE,banking,very_high,medium,Nifty 50 constituent
+equity,TCS.NS,NSE,technology,high,medium,Nifty 50 constituent
+equity,INFY.NS,NSE,technology,high,medium,Nifty 50 constituent
+equity,ICICIBANK.NS,NSE,banking,high,medium,Nifty 50 constituent
+equity,HINDUNILVR.NS,NSE,consumer,high,low,Nifty 50 constituent
+equity,WIPRO.NS,NSE,technology,medium,medium,Nifty 50 constituent
+equity,BHARTIARTL.NS,NSE,telecom,high,medium,Nifty 50 constituent
+equity,SBIN.NS,NSE,banking,high,medium,Nifty 50 constituent
+equity,KOTAKBANK.NS,NSE,banking,high,medium,Nifty 50 constituent
+crypto,BTCUSDT,BINANCE,crypto,very_high,high,Bitcoin spot
+crypto,ETHUSDT,BINANCE,crypto,very_high,high,Ethereum spot
+crypto,SOLUSDT,BINANCE,crypto,high,high,Solana spot
+crypto,BNBUSDT,BINANCE,crypto,high,medium,BNB spot
+crypto,XRPUSDT,BINANCE,crypto,high,high,XRP spot
+crypto,ADAUSDT,BINANCE,crypto,medium,high,Cardano spot
+crypto,DOGEUSDT,BINANCE,crypto,high,very_high,Dogecoin spot
+crypto,AVAXUSDT,BINANCE,crypto,medium,high,Avalanche spot
+crypto,LINKUSDT,BINANCE,crypto,medium,high,Chainlink spot
+crypto,DOTUSDT,BINANCE,crypto,medium,high,Polkadot spot
+forex,EURUSD,FX,currency,very_high,low,Euro / US Dollar
+forex,GBPUSD,FX,currency,very_high,low,British Pound / US Dollar
+forex,USDJPY,FX,currency,very_high,low,US Dollar / Japanese Yen
+forex,AUDUSD,FX,currency,high,low,Australian Dollar / US Dollar
