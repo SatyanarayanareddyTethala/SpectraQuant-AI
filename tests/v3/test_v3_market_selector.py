@@ -1,24 +1,8 @@
-"""Tests for the V3 news-first market selector.
-
-Covers:
-* Empty records → RUN_NONE
-* Equity-dominant events → RUN_EQUITIES
-* Crypto-dominant events → RUN_CRYPTO
-* Balanced strong events → RUN_BOTH
-* Weak events → RUN_NONE
-* PANIC veto → RUN_NONE regardless of scores
-* RISK_OFF penalty behaviour (scores halved)
-* EVENT_DRIVEN boost behaviour (scores multiplied by 1.2)
-* Determinism: same input always produces same route and scores
-* MarketSelectorDecision.route is a valid MarketRoute value
-* Event-type affinity correctness (earnings → equity, listing → crypto)
-* No dependence on provider-specific fields
-
-All tests are self-contained: no network calls, no file-system side-effects.
-"""
+"""Focused tests for the deterministic V3 news-first market selector."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -27,512 +11,300 @@ from spectraquant_v3.core.enums import MarketRoute
 from spectraquant_v3.core.news_schema import NewsIntelligenceRecord
 from spectraquant_v3.intelligence.market_selector import (
     EVENT_ASSET_AFFINITY,
+    ContributingEventSummary,
+    MarketRegimes,
+    MarketRiskFlags,
     MarketSelector,
+    MarketSelectorConfig,
     MarketSelectorDecision,
     MarketSelectorInput,
-    ScoredRecord,
+    ScoreBreakdown,
+    SelectorRationale,
+    VetoFlags,
+    canonicalize_event_type,
+    get_event_asset_affinity,
 )
 
-
-# ===========================================================================
-# Helpers
-# ===========================================================================
-
-# Use a fixed far-future timestamp so recency decay is ~1.0 for all records.
-# This isolates the scoring logic from wall-clock time.
-_FRESH_TS = "2099-01-01T00:00:00+00:00"
+_AS_OF = "2026-03-11T09:00:00Z"
+_FRESH_TS = "2026-03-11T08:45:00Z"
+_STALE_TS = "2026-03-09T08:45:00Z"
 
 
-def _rec(
+def _event(
+    *,
+    canonical_symbol: str,
     asset: str,
-    event_type: str = "earnings",
+    event_type: str,
+    timestamp: str = _FRESH_TS,
+    sentiment_score: float = 0.8,
     impact_score: float = 0.9,
     confidence: float = 0.9,
-    sentiment_score: float = 0.8,
-    timestamp: str = _FRESH_TS,
-    **kwargs: Any,
+    article_count: int = 5,
+    **overrides: Any,
 ) -> NewsIntelligenceRecord:
-    """Build a minimal but valid NewsIntelligenceRecord."""
     return NewsIntelligenceRecord(
-        canonical_symbol="TEST",
+        canonical_symbol=canonical_symbol,
         asset=asset,
         timestamp=timestamp,
         event_type=event_type,
         sentiment_score=sentiment_score,
         impact_score=impact_score,
         confidence=confidence,
-        **kwargs,
+        article_count=article_count,
+        source_urls=overrides.pop("source_urls", ["https://example.com/news"]),
+        rationale=overrides.pop("rationale", "normalized event"),
+        provider=overrides.pop("provider", "test-provider"),
+        raw_response=overrides.pop("raw_response", {"provider_specific": True}),
+        **overrides,
     )
 
 
-def _equity(**kw: Any) -> NewsIntelligenceRecord:
-    return _rec(asset="equity", event_type="earnings", **kw)
+def _selector_input(
+    events: list[NewsIntelligenceRecord],
+    *,
+    regimes: MarketRegimes | None = None,
+    risk_flags: MarketRiskFlags | None = None,
+    config: MarketSelectorConfig | None = None,
+) -> MarketSelectorInput:
+    return MarketSelectorInput(
+        as_of_utc=_AS_OF,
+        news_events=events,
+        regimes=regimes or MarketRegimes(),
+        risk_flags=risk_flags or MarketRiskFlags(),
+        config=config,
+    )
 
 
-def _crypto(**kw: Any) -> NewsIntelligenceRecord:
-    return _rec(asset="crypto", event_type="listing", **kw)
-
-
-# ===========================================================================
-# Basic contract tests
-# ===========================================================================
-
-
-class TestMarketSelectorContract:
-    """Verify the output contract of MarketSelector.score()."""
-
-    def test_returns_decision_type(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()])
-        assert isinstance(decision, MarketSelectorDecision)
-
-    def test_route_is_valid_market_route(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()])
-        assert isinstance(decision.route, MarketRoute)
-        assert decision.route in list(MarketRoute)
-
-    def test_scores_in_unit_interval(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity(), _crypto()])
-        assert 0.0 <= decision.equity_score <= 1.0
-        assert 0.0 <= decision.crypto_score <= 1.0
-
-    def test_record_counts_match(self) -> None:
-        sel = MarketSelector()
-        records = [_equity(), _equity(), _crypto()]
-        decision = sel.score(records)
-        assert decision.equity_record_count == 2
-        assert decision.crypto_record_count == 1
-        assert decision.record_count == 3
-
-    def test_scored_at_is_populated(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([])
-        assert decision.scored_at != ""
-
-    def test_rationale_is_populated(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()])
-        assert decision.rationale != ""
-        assert "equity_score" in decision.rationale
-        assert "crypto_score" in decision.rationale
-
-    def test_threshold_fields_match_config(self) -> None:
-        cfg = {"min_score_to_run": 0.25, "both_threshold": 0.70}
-        sel = MarketSelector(config=cfg)
-        decision = sel.score([])
-        assert decision.threshold_used == 0.25
-        assert decision.both_threshold_used == 0.70
-
-
-# ===========================================================================
-# Core routing tests
-# ===========================================================================
-
-
-class TestRoutingDecisions:
-    """Verify the routing logic under various news input scenarios."""
-
+class TestMarketSelectorRouting:
     def test_empty_records_returns_run_none(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([])
+        selector = MarketSelector()
+        decision = selector.score_input(_selector_input([]))
+
         assert decision.route == MarketRoute.RUN_NONE
         assert decision.equity_score == 0.0
         assert decision.crypto_score == 0.0
+        assert decision.rationale.primary_reason.startswith("No actionable")
 
-    def test_equity_dominant_returns_run_equities(self) -> None:
-        """Strong equity signals, no crypto → RUN_EQUITIES."""
-        sel = MarketSelector()
-        records = [_equity(impact_score=0.9, confidence=0.9) for _ in range(5)]
-        decision = sel.score(records)
+    def test_equity_dominant_events_return_run_equities(self) -> None:
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS"),
+            _event(canonical_symbol="TCS.NS", asset="equity", event_type="GUIDANCE", impact_score=0.85),
+            _event(canonical_symbol="BTC", asset="crypto", event_type="SOCIAL_BUZZ", impact_score=0.22, confidence=0.35),
+        ]
+
+        decision = selector.score_input(_selector_input(events))
+
         assert decision.route == MarketRoute.RUN_EQUITIES
+        assert decision.equity_score > decision.crypto_score
+        assert decision.equity_score >= decision.thresholds.high_opportunity_threshold
+        assert decision.rationale.top_contributing_events
+        assert decision.rationale.top_contributing_events[0].asset == "equity"
 
-    def test_crypto_dominant_returns_run_crypto(self) -> None:
-        """Strong crypto signals, no equity → RUN_CRYPTO."""
-        sel = MarketSelector()
-        records = [_crypto(impact_score=0.9, confidence=0.9) for _ in range(5)]
-        decision = sel.score(records)
+    def test_crypto_dominant_events_return_run_crypto(self) -> None:
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="BTC", asset="crypto", event_type="PROTOCOL_UPGRADE"),
+            _event(canonical_symbol="ETH", asset="crypto", event_type="ONCHAIN", impact_score=0.88),
+            _event(canonical_symbol="AAPL", asset="equity", event_type="SOCIAL_BUZZ", impact_score=0.18, confidence=0.30),
+        ]
+
+        decision = selector.score_input(_selector_input(events))
+
         assert decision.route == MarketRoute.RUN_CRYPTO
+        assert decision.crypto_score > decision.equity_score
+        assert decision.crypto_score >= decision.thresholds.high_opportunity_threshold
 
-    def test_balanced_strong_returns_run_both(self) -> None:
-        """Strong signals on both sides → RUN_BOTH."""
-        sel = MarketSelector()
-        records = [
-            _equity(impact_score=0.95, confidence=0.95) for _ in range(5)
-        ] + [
-            _crypto(impact_score=0.95, confidence=0.95) for _ in range(5)
+    def test_balanced_strong_events_return_run_both(self) -> None:
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS"),
+            _event(canonical_symbol="MSFT", asset="equity", event_type="GUIDANCE", impact_score=0.88),
+            _event(canonical_symbol="BTC", asset="crypto", event_type="PROTOCOL_UPGRADE"),
+            _event(canonical_symbol="ETH", asset="crypto", event_type="ONCHAIN", impact_score=0.88),
         ]
-        decision = sel.score(records)
+
+        decision = selector.score_input(_selector_input(events))
+
         assert decision.route == MarketRoute.RUN_BOTH
+        assert decision.equity_score >= decision.thresholds.high_opportunity_threshold
+        assert decision.crypto_score >= decision.thresholds.high_opportunity_threshold
 
-    def test_weak_events_returns_run_none(self) -> None:
-        """Below-threshold signals on both sides → RUN_NONE."""
-        sel = MarketSelector()
-        records = [
-            _equity(impact_score=0.05, confidence=0.05),
-            _crypto(impact_score=0.05, confidence=0.05),
+    def test_weak_events_return_run_none(self) -> None:
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS", impact_score=0.08, confidence=0.10),
+            _event(canonical_symbol="BTC", asset="crypto", event_type="ONCHAIN", impact_score=0.06, confidence=0.10),
         ]
-        decision = sel.score(records)
+
+        decision = selector.score_input(_selector_input(events))
+
         assert decision.route == MarketRoute.RUN_NONE
+        assert decision.equity_score < decision.thresholds.low_opportunity_floor
+        assert decision.crypto_score < decision.thresholds.low_opportunity_floor
 
-    def test_one_side_strong_one_weak(self) -> None:
-        """One side clearly above threshold, other below → single-class route."""
-        sel = MarketSelector()
-        strong_equity = [_equity(impact_score=0.9, confidence=0.9) for _ in range(5)]
-        weak_crypto = [_crypto(impact_score=0.02, confidence=0.02)]
-        decision = sel.score(strong_equity + weak_crypto)
-        assert decision.route == MarketRoute.RUN_EQUITIES
+    def test_score_adapter_remains_available(self) -> None:
+        selector = MarketSelector()
+        records = [_event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS")]
+
+        direct = selector.score(records, regime_label="EVENT_DRIVEN", as_of_utc=_AS_OF)
+        wrapped = selector.score_input(
+            _selector_input(records, regimes=MarketRegimes(global_regime="EVENT_DRIVEN"))
+        )
+
+        assert direct.to_dict() == wrapped.to_dict()
 
 
-# ===========================================================================
-# Regime handling tests
-# ===========================================================================
-
-
-class TestRegimeHandling:
-    """Verify regime veto and multiplier behaviour."""
-
+class TestRegimesAndRiskFlags:
     def test_panic_veto_forces_run_none(self) -> None:
-        """PANIC overrides any score, no matter how strong."""
-        sel = MarketSelector()
-        strong = [
-            _equity(impact_score=1.0, confidence=1.0) for _ in range(10)
-        ] + [
-            _crypto(impact_score=1.0, confidence=1.0) for _ in range(10)
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS"),
+            _event(canonical_symbol="BTC", asset="crypto", event_type="PROTOCOL_UPGRADE"),
         ]
-        decision = sel.score(strong, regime_label="PANIC")
+
+        decision = selector.score_input(
+            _selector_input(
+                events,
+                regimes=MarketRegimes(global_regime="PANIC"),
+                risk_flags=MarketRiskFlags(panic_mode=True),
+            )
+        )
+
         assert decision.route == MarketRoute.RUN_NONE
-        assert decision.regime_vetoed is True
+        assert decision.veto_flags.panic_veto is True
+        assert "Panic" in decision.rationale.primary_reason
 
-    def test_panic_veto_reported_in_rationale(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()], regime_label="PANIC")
-        assert "PANIC" in decision.rationale or "vetoed" in decision.rationale.lower()
+    def test_risk_off_penalty_is_applied(self) -> None:
+        selector = MarketSelector()
+        events = [_event(canonical_symbol="BTC", asset="crypto", event_type="REGULATORY", impact_score=0.82)]
 
-    def test_risk_off_reduces_scores(self) -> None:
-        """RISK_OFF multiplies both scores by 0.5."""
-        sel = MarketSelector()
-        records = [_equity(impact_score=0.8, confidence=0.8) for _ in range(3)]
-        normal = sel.score(records, regime_label="UNKNOWN")
-        risk_off = sel.score(records, regime_label="RISK_OFF")
-        # Scores under RISK_OFF must be strictly lower than neutral
-        assert risk_off.equity_score < normal.equity_score
-        # The ratio should be ~0.5 (may be clipped at 1.0)
-        if normal.equity_score > 0:
-            ratio = risk_off.equity_score / normal.equity_score
-            assert abs(ratio - 0.5) < 1e-6
-
-    def test_risk_off_can_push_score_below_threshold(self) -> None:
-        """RISK_OFF may push a borderline score below threshold → RUN_NONE."""
-        # Choose impact/confidence so that the raw score is just above threshold
-        # but halved is below.
-        # min_score default = 0.35; raw ≈ 0.4, risk_off ≈ 0.2 → RUN_NONE
-        sel = MarketSelector()
-        # listing affinity for equity is 0.10 — use earnings (1.0)
-        # raw weight per record ≈ 1.0 * impact * affinity_equity * confidence
-        # We need: impact * 1.0 * confidence ≈ 0.40
-        # => impact=0.7, confidence=0.57 → 0.7*0.57 ≈ 0.40
-        records = [_equity(impact_score=0.7, confidence=0.57)]
-        neutral_decision = sel.score(records, regime_label="UNKNOWN")
-        risk_off_decision = sel.score(records, regime_label="RISK_OFF")
-        # Neutral should be above or near threshold
-        assert neutral_decision.equity_score >= 0.35
-        # RISK_OFF should push it below
-        assert risk_off_decision.equity_score < 0.35
-
-    def test_event_driven_boosts_scores(self) -> None:
-        """EVENT_DRIVEN multiplies scores by 1.2."""
-        sel = MarketSelector()
-        records = [_equity(impact_score=0.5, confidence=0.5) for _ in range(3)]
-        normal = sel.score(records, regime_label="UNKNOWN")
-        event_driven = sel.score(records, regime_label="EVENT_DRIVEN")
-        assert event_driven.equity_score >= normal.equity_score
-
-    def test_event_driven_boost_ratio(self) -> None:
-        """EVENT_DRIVEN score should be 1.2× neutral (when not clamped)."""
-        sel = MarketSelector()
-        # Use a score that stays < 1/1.2 ≈ 0.833 to avoid clamping
-        records = [_equity(impact_score=0.5, confidence=0.5)]
-        normal = sel.score(records, regime_label="UNKNOWN")
-        event_driven = sel.score(records, regime_label="EVENT_DRIVEN")
-        if normal.equity_score > 0:
-            ratio = event_driven.equity_score / normal.equity_score
-            assert abs(ratio - 1.2) < 1e-6
-
-    def test_unknown_regime_is_neutral(self) -> None:
-        """Unrecognised regime labels should not alter scores."""
-        sel = MarketSelector()
-        records = [_equity()]
-        explicit_unknown = sel.score(records, regime_label="UNKNOWN")
-        some_other = sel.score(records, regime_label="TRENDING")
-        assert explicit_unknown.equity_score == pytest.approx(
-            some_other.equity_score, rel=1e-9
+        neutral = selector.score_input(_selector_input(events))
+        risk_off = selector.score_input(
+            _selector_input(events, regimes=MarketRegimes(global_regime="NORMAL", crypto_regime="RISK_OFF"))
         )
 
+        assert risk_off.crypto_score < neutral.crypto_score
+        assert risk_off.veto_flags.risk_off_penalty_applied is True
 
-# ===========================================================================
-# Determinism tests
-# ===========================================================================
+    def test_event_driven_boost_is_applied(self) -> None:
+        selector = MarketSelector()
+        events = [_event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS", impact_score=0.55)]
 
+        neutral = selector.score_input(_selector_input(events))
+        boosted = selector.score_input(
+            _selector_input(events, regimes=MarketRegimes(global_regime="NORMAL", equity_regime="EVENT_DRIVEN"))
+        )
 
-class TestDeterminism:
-    """Verify that identical inputs always produce identical outputs."""
+        assert boosted.equity_score > neutral.equity_score
+        assert "EVENT_DRIVEN" in boosted.rationale.secondary_reasons[2]
 
-    def test_same_inputs_same_route(self) -> None:
-        sel = MarketSelector()
-        records = [_equity(), _crypto()]
-        first = sel.score(records)
-        second = sel.score(records)
-        assert first.route == second.route
+    def test_high_cross_asset_stress_penalizes_scores(self) -> None:
+        selector = MarketSelector()
+        events = [_event(canonical_symbol="BTC", asset="crypto", event_type="MACRO", impact_score=0.75)]
 
-    def test_same_inputs_same_scores(self) -> None:
-        sel = MarketSelector()
-        records = [_equity(impact_score=0.7, confidence=0.8) for _ in range(3)]
-        first = sel.score(records)
-        second = sel.score(records)
-        assert first.equity_score == second.equity_score
-        assert first.crypto_score == second.crypto_score
+        neutral = selector.score_input(_selector_input(events))
+        stressed = selector.score_input(
+            _selector_input(events, risk_flags=MarketRiskFlags(high_cross_asset_stress=True))
+        )
 
-    def test_multiple_calls_do_not_mutate_state(self) -> None:
-        sel = MarketSelector()
-        records = [_equity(), _crypto()]
-        results = [sel.score(records) for _ in range(5)]
-        routes = [r.route for r in results]
-        assert len(set(routes)) == 1, "Route changed across repeated calls"
-
-    def test_selector_instances_agree(self) -> None:
-        """Two selectors with the same config produce the same decision."""
-        cfg = {"min_score_to_run": 0.30, "both_threshold": 0.55}
-        sel_a = MarketSelector(config=cfg)
-        sel_b = MarketSelector(config=cfg)
-        records = [_equity(impact_score=0.8, confidence=0.9) for _ in range(4)]
-        assert sel_a.score(records).route == sel_b.score(records).route
+        assert stressed.crypto_score < neutral.crypto_score
+        assert stressed.veto_flags.risk_off_penalty_applied is True
 
 
-# ===========================================================================
-# Event-type affinity tests
-# ===========================================================================
+class TestScoringAndDeterminism:
+    def test_recency_decay_prefers_fresher_events(self) -> None:
+        selector = MarketSelector()
+        fresh = _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS", timestamp=_FRESH_TS)
+        stale = _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS", timestamp=_STALE_TS)
 
+        fresh_decision = selector.score_input(_selector_input([fresh]))
+        stale_decision = selector.score_input(_selector_input([stale]))
 
-class TestEventTypeAffinity:
-    """Verify that event_type correctly modulates per-asset-class scoring."""
+        assert fresh_decision.equity_score > stale_decision.equity_score
 
-    def test_earnings_boosts_equity_not_crypto(self) -> None:
-        """earnings event should contribute much more to equity than crypto."""
-        sel = MarketSelector()
-        earnings_rec = _rec(
+    def test_selector_is_deterministic_for_identical_inputs(self) -> None:
+        selector = MarketSelector()
+        selector_input = _selector_input(
+            [
+                _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS"),
+                _event(canonical_symbol="BTC", asset="crypto", event_type="REGULATORY", sentiment_score=-0.7),
+            ],
+            regimes=MarketRegimes(global_regime="NORMAL", equity_regime="EVENT_DRIVEN", crypto_regime="RISK_OFF"),
+        )
+
+        first = selector.score_input(selector_input)
+        second = selector.score_input(selector_input)
+
+        assert first.to_dict() == second.to_dict()
+
+    def test_provider_specific_fields_do_not_affect_score(self) -> None:
+        selector = MarketSelector()
+        base_event = _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS")
+        variant = _event(
+            canonical_symbol="INFY.NS",
             asset="equity",
-            event_type="earnings",
-            impact_score=0.9,
-            confidence=0.9,
-        )
-        decision = sel.score([earnings_rec])
-        # equity_score should be high; crypto_score should be 0 (no crypto records)
-        assert decision.equity_score > 0.5
-        assert decision.crypto_score == 0.0
-
-    def test_listing_boosts_crypto_not_equity(self) -> None:
-        """listing event should contribute much more to crypto than equity."""
-        sel = MarketSelector()
-        listing_rec = _rec(
-            asset="crypto",
-            event_type="listing",
-            impact_score=0.9,
-            confidence=0.9,
-        )
-        decision = sel.score([listing_rec])
-        assert decision.crypto_score > 0.5
-        assert decision.equity_score == 0.0
-
-    def test_affinity_table_equity_earnings_vs_listing(self) -> None:
-        """Within the affinity table, earnings equity > listing equity."""
-        assert EVENT_ASSET_AFFINITY["EARNINGS"]["equity"] > EVENT_ASSET_AFFINITY["LISTING"]["equity"]
-
-    def test_affinity_table_crypto_listing_vs_earnings(self) -> None:
-        """Within the affinity table, listing crypto > earnings crypto."""
-        assert EVENT_ASSET_AFFINITY["LISTING"]["crypto"] > EVENT_ASSET_AFFINITY["EARNINGS"]["crypto"]
-
-    def test_unknown_event_type_gets_default_affinity(self) -> None:
-        """Records with unrecognised event_type use the 0.5/0.5 default."""
-        sel = MarketSelector()
-        equity_unknown = _rec(
-            asset="equity",
-            event_type="totally_new_event_type",
-            impact_score=0.8,
-            confidence=0.8,
-        )
-        decision = sel.score([equity_unknown])
-        # Score should be non-zero (default affinity 0.5)
-        assert decision.equity_score > 0.0
-
-
-    def test_event_type_lookup_is_case_insensitive_via_canonicalization(self) -> None:
-        """Mixed-case event_type should map to canonical affinity safely."""
-        sel = MarketSelector()
-        lower = _rec(asset="equity", event_type="earnings", impact_score=0.8, confidence=0.8)
-        upper = _rec(asset="equity", event_type="EARNINGS", impact_score=0.8, confidence=0.8)
-        mixed = _rec(asset="equity", event_type="EaRnInGs", impact_score=0.8, confidence=0.8)
-
-        baseline = sel.score([upper]).equity_score
-        assert sel.score([lower]).equity_score == pytest.approx(baseline, rel=1e-9)
-        assert sel.score([mixed]).equity_score == pytest.approx(baseline, rel=1e-9)
-
-    def test_unknown_event_fallback_is_reported_in_rationale(self) -> None:
-        """Unknown event_type fallback should be explicitly explained."""
-        sel = MarketSelector()
-        decision = sel.score([_rec(asset="equity", event_type="totally_new_event_type")])
-        assert "unknown_event_fallback=1" in decision.rationale
-        assert "neutral_affinity=0.50/0.50" in decision.rationale
-
-    def test_macro_contributes_to_both_asset_classes(self) -> None:
-        """macro has meaningful affinity for both asset classes."""
-        assert EVENT_ASSET_AFFINITY["MACRO"]["equity"] > 0.4
-        assert EVENT_ASSET_AFFINITY["MACRO"]["crypto"] > 0.4
-
-    def test_regulatory_is_crypto_dominant(self) -> None:
-        """regulatory affinity is higher for crypto than equity."""
-        assert EVENT_ASSET_AFFINITY["REGULATORY"]["crypto"] > EVENT_ASSET_AFFINITY["REGULATORY"]["equity"]
-
-
-# ===========================================================================
-# Provider-agnostic field usage
-# ===========================================================================
-
-
-class TestProviderAgnostic:
-    """Verify no dependence on provider-specific fields."""
-
-    def test_provider_field_does_not_affect_score(self) -> None:
-        """The provider name must not influence the computed score."""
-        sel = MarketSelector()
-        rec_a = _equity(provider="perplexity")
-        rec_b = _equity(provider="newsapi")
-        rec_c = _equity(provider="")  # no provider
-        assert sel.score([rec_a]).equity_score == pytest.approx(
-            sel.score([rec_b]).equity_score, rel=1e-9
-        )
-        assert sel.score([rec_a]).equity_score == pytest.approx(
-            sel.score([rec_c]).equity_score, rel=1e-9
+            event_type="EARNINGS",
+            provider="different-provider",
+            source_urls=["https://other.example.com/item"],
+            rationale="different provider payload",
+            raw_response={"opaque": "payload"},
         )
 
-    def test_source_urls_do_not_affect_score(self) -> None:
-        """source_urls must not influence the computed score."""
-        sel = MarketSelector()
-        rec_a = _equity(source_urls=["https://example.com/1"])
-        rec_b = _equity(source_urls=[])
-        rec_c = _equity(source_urls=["https://a.com", "https://b.com", "https://c.com"])
-        scores = {sel.score([r]).equity_score for r in [rec_a, rec_b, rec_c]}
-        assert len(scores) == 1, f"source_urls changed score: {scores}"
+        base_decision = selector.score_input(_selector_input([base_event]))
+        variant_decision = selector.score_input(_selector_input([variant]))
 
-    def test_raw_response_does_not_affect_score(self) -> None:
-        """raw_response must not influence the computed score."""
-        sel = MarketSelector()
-        rec_a = _equity(raw_response={})
-        rec_b = _equity(raw_response={"extra": "data", "nested": {"key": 1}})
-        assert sel.score([rec_a]).equity_score == pytest.approx(
-            sel.score([rec_b]).equity_score, rel=1e-9
-        )
+        assert base_decision.equity_score == pytest.approx(variant_decision.equity_score)
+        assert base_decision.route == variant_decision.route
 
-    def test_rationale_field_does_not_affect_score(self) -> None:
-        """The record's rationale string must not influence score."""
-        sel = MarketSelector()
-        rec_a = _equity(rationale="Strong Q4 results.")
-        rec_b = _equity(rationale="")
-        assert sel.score([rec_a]).equity_score == pytest.approx(
-            sel.score([rec_b]).equity_score, rel=1e-9
-        )
-
-
-# ===========================================================================
-# Top-N contributing records
-# ===========================================================================
-
-
-class TestTopRecords:
-    """Verify the top contributing records in the decision output."""
-
-    def test_top_equity_records_populated(self) -> None:
-        sel = MarketSelector()
-        records = [_equity() for _ in range(3)]
-        decision = sel.score(records)
-        assert len(decision.top_equity_records) <= 3
-        assert all(isinstance(r, ScoredRecord) for r in decision.top_equity_records)
-
-    def test_top_equity_records_sorted_by_weight_desc(self) -> None:
-        sel = MarketSelector()
-        records = [
-            _equity(impact_score=0.9, confidence=0.9),
-            _equity(impact_score=0.3, confidence=0.3),
-            _equity(impact_score=0.6, confidence=0.6),
+    def test_top_contributing_events_are_present_and_sorted(self) -> None:
+        selector = MarketSelector()
+        events = [
+            _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS", impact_score=0.95),
+            _event(canonical_symbol="TCS.NS", asset="equity", event_type="GUIDANCE", impact_score=0.65),
+            _event(canonical_symbol="BTC", asset="crypto", event_type="SOCIAL_BUZZ", impact_score=0.12, confidence=0.25),
         ]
-        decision = sel.score(records)
-        weights = [r.raw_weight for r in decision.top_equity_records]
-        assert weights == sorted(weights, reverse=True)
 
-    def test_top_n_config_respected(self) -> None:
-        sel = MarketSelector(config={"top_n": 2})
-        records = [_equity() for _ in range(10)]
-        decision = sel.score(records)
-        assert len(decision.top_equity_records) <= 2
+        decision = selector.score_input(_selector_input(events))
+        contributions = [item.contribution for item in decision.rationale.top_contributing_events]
 
-    def test_empty_records_empty_top(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([])
-        assert decision.top_equity_records == []
-        assert decision.top_crypto_records == []
+        assert decision.rationale.top_contributing_events
+        assert contributions == sorted(contributions, reverse=True)
 
 
-# ===========================================================================
-# Config / threshold edge cases
-# ===========================================================================
+class TestAffinityAndSerialization:
+    def test_event_type_affinity_table_matches_contract(self) -> None:
+        assert EVENT_ASSET_AFFINITY["EARNINGS"] == {"equity": 1.00, "crypto": 0.05}
+        assert EVENT_ASSET_AFFINITY["PROTOCOL_UPGRADE"] == {"equity": 0.05, "crypto": 0.95}
+        assert EVENT_ASSET_AFFINITY["UNKNOWN"] == {"equity": 0.50, "crypto": 0.50}
+        assert canonicalize_event_type("m&a") == "M_AND_A"
+        assert get_event_asset_affinity("totally_new_event", "equity") == pytest.approx(0.50)
 
-
-class TestConfigThresholds:
-    """Verify threshold parameters are respected."""
-
-    def test_custom_min_score_to_run(self) -> None:
-        """Setting a very high threshold should force RUN_NONE on moderate signals."""
-        sel = MarketSelector(config={"min_score_to_run": 0.99})
-        records = [_equity(impact_score=0.8, confidence=0.8)]
-        decision = sel.score(records)
-        assert decision.route == MarketRoute.RUN_NONE
-
-    def test_zero_min_score_allows_any_score(self) -> None:
-        """Setting threshold to 0 means any non-zero score qualifies."""
-        sel = MarketSelector(config={"min_score_to_run": 0.0})
-        records = [_equity(impact_score=0.01, confidence=0.01)]
-        decision = sel.score(records)
-        assert decision.route != MarketRoute.RUN_NONE
-
-    def test_both_threshold_triggers_run_both(self) -> None:
-        """When both scores exceed both_threshold, route should be RUN_BOTH."""
-        # Use a low both_threshold so moderate signals trigger RUN_BOTH
-        sel = MarketSelector(config={"both_threshold": 0.10, "min_score_to_run": 0.05})
-        records = [
-            _equity(impact_score=0.9, confidence=0.9),
-            _crypto(impact_score=0.9, confidence=0.9),
-        ]
-        decision = sel.score(records)
-        assert decision.route == MarketRoute.RUN_BOTH
-
-
-class TestSerializationAndInputAdapter:
-    def test_score_input_adapter_matches_score(self) -> None:
-        sel = MarketSelector()
-        records = [_equity(), _crypto()]
-        direct = sel.score(records, regime_label="EVENT_DRIVEN")
-        wrapped = sel.score_input(
-            MarketSelectorInput(records=records, regime_label="EVENT_DRIVEN")
+    def test_json_serialization_round_trip_is_stable(self) -> None:
+        decision = MarketSelectorDecision(
+            as_of_utc="2026-03-11T09:00:00+00:00",
+            decision=MarketRoute.RUN_EQUITIES,
+            scores=ScoreBreakdown(0.64, 0.31),
+            thresholds=MarketSelectorConfig(),
+            regimes=MarketRegimes(global_regime="NORMAL", equity_regime="EVENT_DRIVEN", crypto_regime="RISK_OFF"),
+            veto_flags=VetoFlags(panic_veto=False, risk_off_penalty_applied=True),
+            rationale=SelectorRationale(
+                primary_reason="Equity catalysts are stronger.",
+                secondary_reasons=["Positive earnings surprise."],
+                top_contributing_events=[
+                    ContributingEventSummary(
+                        canonical_symbol="INFY.NS",
+                        asset="equity",
+                        event_type="EARNINGS",
+                        contribution=0.22,
+                    )
+                ],
+            ),
         )
-        assert wrapped.route == direct.route
-        assert wrapped.equity_score == direct.equity_score
-        assert wrapped.crypto_score == direct.crypto_score
 
-    def test_decision_to_dict_has_stable_contract_key_order(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()])
         payload = decision.to_dict()
+        restored = MarketSelectorDecision.from_dict(json.loads(json.dumps(payload)))
+
         assert list(payload.keys()) == [
             "as_of_utc",
             "decision",
@@ -543,12 +315,27 @@ class TestSerializationAndInputAdapter:
             "rationale",
             "version",
         ]
+        assert restored.to_dict() == payload
+        assert restored.decision == MarketRoute.RUN_EQUITIES
+        assert restored.rationale.top_contributing_events[0].canonical_symbol == "INFY.NS"
 
-    def test_decision_round_trip_from_dict(self) -> None:
-        sel = MarketSelector()
-        decision = sel.score([_equity()], regime_label="RISK_OFF")
-        round_trip = MarketSelectorDecision.from_dict(decision.to_dict())
-        assert round_trip.route == decision.route
-        assert round_trip.equity_score == decision.equity_score
-        assert round_trip.crypto_score == decision.crypto_score
-        assert round_trip.version == "v1"
+    def test_input_round_trip_uses_contract_shape(self) -> None:
+        selector_input = _selector_input(
+            [
+                _event(canonical_symbol="INFY.NS", asset="equity", event_type="EARNINGS"),
+                _event(canonical_symbol="BTC", asset="crypto", event_type="REGULATORY"),
+            ],
+            regimes=MarketRegimes(global_regime="NORMAL", equity_regime="EVENT_DRIVEN", crypto_regime="RISK_OFF"),
+            risk_flags=MarketRiskFlags(panic_mode=False, high_cross_asset_stress=False),
+            config=MarketSelectorConfig(),
+        )
+
+        payload = selector_input.to_dict()
+        restored = MarketSelectorInput.from_dict(json.loads(json.dumps(payload)))
+
+        assert sorted(payload.keys()) == ["as_of_utc", "config", "news_events", "regimes", "risk_flags"]
+        expected_payload = dict(payload)
+        expected_payload["as_of_utc"] = "2026-03-11T09:00:00+00:00"
+        assert restored.to_dict() == expected_payload
+        assert restored.news_events[0].canonical_symbol == "INFY.NS"
+        assert restored.records == restored.news_events

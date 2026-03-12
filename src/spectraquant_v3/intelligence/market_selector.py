@@ -1,24 +1,12 @@
-"""News-first market selector for SpectraQuant-AI-V3.
+"""Deterministic V3 news-first market selector.
 
-Scores a list of :class:`~spectraquant_v3.core.news_schema.NewsIntelligenceRecord`
-objects for equities and crypto separately and produces a deterministic
-:class:`MarketSelectorDecision` that routes the system to run equities,
-crypto, both, or neither.
-
-Design constraints
-------------------
-* Pure function — no I/O, no network calls, no file-system access.
-* Provider-agnostic — only uses :class:`~spectraquant_v3.core.news_schema.NewsIntelligenceRecord`
-  fields; never calls any provider directly.
-* Asset-class-safe — only touches ``record.asset``; no imports from
-  ``spectraquant_v3.crypto`` or ``spectraquant_v3.equities``.
-* V2-safe — zero imports from ``spectraquant``; lives entirely in V3.
-* Deterministic — identical inputs always produce identical outputs.
+This module scores provider-agnostic :class:`NewsIntelligenceRecord` inputs for
+equities and crypto, then emits a typed routing decision that can later sit
+above the V3 strategy runner.
 """
 
 from __future__ import annotations
 
-import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -27,241 +15,329 @@ from typing import Any
 from spectraquant_v3.core.enums import MarketRoute
 from spectraquant_v3.core.news_schema import NewsIntelligenceRecord
 
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Event-type → asset-class affinity table
-# ---------------------------------------------------------------------------
-# Each canonical event type carries an implicit affinity toward equities or
-# crypto. Keys are intentionally UPPERCASE so lookup can canonicalize all
-# inbound event_type values to a deterministic representation.
-# Adapted from the V2 event_ontology.py taxonomy (Phases 1–6 audit, §4 Idea 2).
-# Values represent the weight multiplier applied to a record's contribution to
-# the per-asset-class score.  All values are in [0.0, 1.0].
-# ---------------------------------------------------------------------------
+_DEFAULT_REFERENCE_TIME = "1970-01-01T00:00:00+00:00"
+_DEFAULT_TOP_CONTRIBUTORS = 5
+_TOP_K_INTENSITY = 3
+_UNKNOWN_EVENT_TYPE = "UNKNOWN"
 
 EVENT_ASSET_AFFINITY: dict[str, dict[str, float]] = {
-    # Equity-dominant events
-    "EARNINGS":              {"equity": 1.00, "crypto": 0.05},
-    "M_AND_A":               {"equity": 0.90, "crypto": 0.10},
-    "CORPORATE_ACTION":      {"equity": 0.80, "crypto": 0.05},
-    "OPERATIONS_DISRUPTION": {"equity": 0.70, "crypto": 0.20},
-    # Cross-asset events (macro affects both; crypto reacts more to rates)
-    "MACRO":                 {"equity": 0.60, "crypto": 0.80},
-    "RISK":                  {"equity": 0.60, "crypto": 0.50},
-    # Crypto-dominant events
-    "REGULATORY":            {"equity": 0.50, "crypto": 0.85},
-    "LISTING":               {"equity": 0.10, "crypto": 0.90},
-    "SECURITY_INCIDENT":     {"equity": 0.30, "crypto": 0.75},
-    # Fallback for unrecognised event types
-    "UNKNOWN":               {"equity": 0.50, "crypto": 0.50},
+    "EARNINGS": {"equity": 1.00, "crypto": 0.05},
+    "GUIDANCE": {"equity": 0.95, "crypto": 0.05},
+    "M_AND_A": {"equity": 0.90, "crypto": 0.10},
+    "DIVIDEND": {"equity": 0.85, "crypto": 0.00},
+    "ANALYST": {"equity": 0.75, "crypto": 0.10},
+    "MACRO": {"equity": 0.60, "crypto": 0.80},
+    "REGULATORY": {"equity": 0.50, "crypto": 0.85},
+    "PROTOCOL_UPGRADE": {"equity": 0.05, "crypto": 0.95},
+    "EXCHANGE_HACK": {"equity": 0.00, "crypto": 1.00},
+    "ONCHAIN": {"equity": 0.00, "crypto": 0.95},
+    "SECTOR_THEME": {"equity": 0.70, "crypto": 0.55},
+    "SOCIAL_BUZZ": {"equity": 0.20, "crypto": 0.45},
+    _UNKNOWN_EVENT_TYPE: {"equity": 0.50, "crypto": 0.50},
 }
 
-# Default affinity for event types not in the lookup table
-_DEFAULT_AFFINITY: dict[str, float] = {"equity": 0.50, "crypto": 0.50}
-
-# Explicit aliases observed in provider payloads and historical datasets.
-# All aliases must resolve to a canonical key in EVENT_ASSET_AFFINITY.
 _EVENT_TYPE_ALIASES: dict[str, str] = {
     "M&A": "M_AND_A",
     "MERGERS_AND_ACQUISITIONS": "M_AND_A",
+    "LISTING": "REGULATORY",
+    "SECURITY_INCIDENT": "EXCHANGE_HACK",
+    "CORPORATE_ACTION": "DIVIDEND",
+    "OPERATIONS_DISRUPTION": "SECTOR_THEME",
     "REGULATION": "REGULATORY",
-    "GENERAL": "UNKNOWN",
 }
 
-# ---------------------------------------------------------------------------
-# Regime multipliers
-# ---------------------------------------------------------------------------
-# Applied to both scores before routing thresholds are evaluated.
-# PANIC is handled separately as an unconditional veto.
 
-_REGIME_MULTIPLIERS: dict[str, float] = {
-    "RISK_OFF": 0.5,
-    "EVENT_DRIVEN": 1.2,
-}
-
-# Regimes that unconditionally veto all routing (force RUN_NONE).
-_VETO_REGIMES: frozenset[str] = frozenset({"PANIC"})
+def _round_float(value: float) -> float:
+    return round(float(value), 6)
 
 
-# ---------------------------------------------------------------------------
-# Dataclass: MarketSelectorDecision
-# ---------------------------------------------------------------------------
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
-@dataclass
-class ScoredRecord:
-    """Score contribution from a single :class:`NewsIntelligenceRecord`.
+def _serialize_datetime(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat()
 
-    Included in :attr:`MarketSelectorDecision.top_equity_records` and
-    :attr:`MarketSelectorDecision.top_crypto_records` for explainability.
-    """
 
-    canonical_symbol: str
-    event_type: str
-    asset: str
-    raw_weight: float
-    """Unscaled per-record contribution before normalisation."""
+def canonicalize_event_type(event_type: str | None) -> str:
+    normalized = (event_type or "").strip().upper()
+    if not normalized:
+        return _UNKNOWN_EVENT_TYPE
+    if normalized in EVENT_ASSET_AFFINITY:
+        return normalized
+    return _EVENT_TYPE_ALIASES.get(normalized, _UNKNOWN_EVENT_TYPE)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "canonical_symbol": self.canonical_symbol,
-            "event_type": self.event_type,
-            "asset": self.asset,
-            "raw_weight": round(float(self.raw_weight), 6),
-        }
 
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> ScoredRecord:
-        return cls(
-            canonical_symbol=str(payload.get("canonical_symbol", "")),
-            event_type=str(payload.get("event_type", "unknown")),
-            asset=str(payload.get("asset", "unknown")),
-            raw_weight=float(payload.get("raw_weight", 0.0)),
-        )
+def get_event_asset_affinity(event_type: str | None, asset_class: str) -> float:
+    canonical = canonicalize_event_type(event_type)
+    return float(EVENT_ASSET_AFFINITY.get(canonical, EVENT_ASSET_AFFINITY[_UNKNOWN_EVENT_TYPE]).get(asset_class, 0.5))
+
+
+def _route_from_raw(value: str | MarketRoute) -> MarketRoute:
+    if isinstance(value, MarketRoute):
+        return value
+    text = str(value).strip()
+    if not text:
+        return MarketRoute.RUN_NONE
+    if text in MarketRoute.__members__:
+        return MarketRoute[text]
+    return MarketRoute(text.lower())
 
 
 @dataclass(frozen=True)
 class MarketSelectorConfig:
-    """Configuration for deterministic market selection."""
+    low_opportunity_floor: float = 0.15
+    high_opportunity_threshold: float = 0.55
+    both_margin: float = 0.10
+    minimum_score_gap: float = 0.08
+    recency_half_life_hours_equity: float = 18.0
+    recency_half_life_hours_crypto: float = 8.0
 
-    min_score_to_run: float = 0.35
-    both_threshold: float = 0.60
-    half_life_hours: float = 6.0
-    top_n: int = 5
+    def __post_init__(self) -> None:
+        if self.recency_half_life_hours_equity <= 0:
+            raise ValueError("recency_half_life_hours_equity must be > 0")
+        if self.recency_half_life_hours_crypto <= 0:
+            raise ValueError("recency_half_life_hours_crypto must be > 0")
+        if self.low_opportunity_floor < 0 or self.high_opportunity_threshold < 0:
+            raise ValueError("opportunity thresholds must be >= 0")
+        if self.both_margin < 0 or self.minimum_score_gap < 0:
+            raise ValueError("decision margins must be >= 0")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, float]:
         return {
-            "min_score_to_run": float(self.min_score_to_run),
-            "both_threshold": float(self.both_threshold),
-            "half_life_hours": float(self.half_life_hours),
-            "top_n": int(self.top_n),
+            "low_opportunity_floor": _round_float(self.low_opportunity_floor),
+            "high_opportunity_threshold": _round_float(self.high_opportunity_threshold),
+            "both_margin": _round_float(self.both_margin),
+            "minimum_score_gap": _round_float(self.minimum_score_gap),
+            "recency_half_life_hours_equity": _round_float(self.recency_half_life_hours_equity),
+            "recency_half_life_hours_crypto": _round_float(self.recency_half_life_hours_crypto),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any] | None) -> MarketSelectorConfig:
-        p = payload or {}
+        data = payload or {}
         return cls(
-            min_score_to_run=float(p.get("min_score_to_run", 0.35)),
-            both_threshold=float(p.get("both_threshold", 0.60)),
-            half_life_hours=float(p.get("half_life_hours", 6.0)),
-            top_n=int(p.get("top_n", 5)),
+            low_opportunity_floor=float(data.get("low_opportunity_floor", 0.15)),
+            high_opportunity_threshold=float(data.get("high_opportunity_threshold", 0.55)),
+            both_margin=float(data.get("both_margin", 0.10)),
+            minimum_score_gap=float(data.get("minimum_score_gap", 0.08)),
+            recency_half_life_hours_equity=float(data.get("recency_half_life_hours_equity", 18.0)),
+            recency_half_life_hours_crypto=float(data.get("recency_half_life_hours_crypto", 8.0)),
+        )
+
+
+@dataclass(frozen=True)
+class MarketRegimes:
+    global_regime: str = "NORMAL"
+    equity_regime: str = "NORMAL"
+    crypto_regime: str = "NORMAL"
+
+    def normalized(self) -> MarketRegimes:
+        return MarketRegimes(
+            global_regime=self.global_regime.strip().upper(),
+            equity_regime=self.equity_regime.strip().upper(),
+            crypto_regime=self.crypto_regime.strip().upper(),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        normalized = self.normalized()
+        return {
+            "global": normalized.global_regime,
+            "equity": normalized.equity_regime,
+            "crypto": normalized.crypto_regime,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> MarketRegimes:
+        data = payload or {}
+        return cls(
+            global_regime=str(data.get("global", "NORMAL")),
+            equity_regime=str(data.get("equity", "NORMAL")),
+            crypto_regime=str(data.get("crypto", "NORMAL")),
+        )
+
+    def for_asset(self, asset_class: str) -> str:
+        normalized = self.normalized()
+        if asset_class == "equity":
+            return normalized.equity_regime
+        return normalized.crypto_regime
+
+
+@dataclass(frozen=True)
+class MarketRiskFlags:
+    panic_mode: bool = False
+    high_cross_asset_stress: bool = False
+
+    def to_dict(self) -> dict[str, bool]:
+        return {
+            "panic_mode": bool(self.panic_mode),
+            "high_cross_asset_stress": bool(self.high_cross_asset_stress),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> MarketRiskFlags:
+        data = payload or {}
+        return cls(
+            panic_mode=bool(data.get("panic_mode", False)),
+            high_cross_asset_stress=bool(data.get("high_cross_asset_stress", False)),
         )
 
 
 @dataclass(frozen=True)
 class MarketSelectorInput:
-    """Input envelope for :meth:`MarketSelector.score_input`."""
+    as_of_utc: str
+    news_events: list[NewsIntelligenceRecord] = field(default_factory=list)
+    regimes: MarketRegimes = field(default_factory=MarketRegimes)
+    risk_flags: MarketRiskFlags = field(default_factory=MarketRiskFlags)
+    config: MarketSelectorConfig | None = None
 
-    records: list[NewsIntelligenceRecord]
-    regime_label: str = "UNKNOWN"
-    as_of_utc: str | None = None
+    @property
+    def records(self) -> list[NewsIntelligenceRecord]:
+        return self.news_events
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "records": [record.model_dump() for record in self.records],
-            "regime_label": self.regime_label,
             "as_of_utc": self.as_of_utc,
+            "news_events": [event.to_dict() for event in self.news_events],
+            "regimes": self.regimes.to_dict(),
+            "risk_flags": self.risk_flags.to_dict(),
+            "config": None if self.config is None else self.config.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> MarketSelectorInput:
-        raw_records = payload.get("records", [])
+        raw_events = payload.get("news_events", payload.get("records", []))
+        events = [NewsIntelligenceRecord(**event_payload) for event_payload in raw_events]
+        as_of_value = payload.get("as_of_utc")
+        if as_of_value is None:
+            as_of_value = _derive_reference_time(events)
+        else:
+            as_of_value = _serialize_datetime(_parse_iso_datetime(str(as_of_value)) or _parse_iso_datetime(_DEFAULT_REFERENCE_TIME))
         return cls(
-            records=[NewsIntelligenceRecord.model_validate(rec) for rec in raw_records],
-            regime_label=str(payload.get("regime_label", "UNKNOWN")),
-            as_of_utc=payload.get("as_of_utc"),
+            as_of_utc=str(as_of_value),
+            news_events=events,
+            regimes=MarketRegimes.from_dict(payload.get("regimes")),
+            risk_flags=MarketRiskFlags.from_dict(payload.get("risk_flags")),
+            config=None if payload.get("config") is None else MarketSelectorConfig.from_dict(payload.get("config")),
         )
 
 
 @dataclass(frozen=True)
 class ScoreBreakdown:
-    equity: float
-    crypto: float
-    equity_record_count: int
-    crypto_record_count: int
-    record_count: int
+    equity_opportunity_score: float
+    crypto_opportunity_score: float
 
-    def to_dict(self) -> dict[str, Any]:
+    @property
+    def equity(self) -> float:
+        return self.equity_opportunity_score
+
+    @property
+    def crypto(self) -> float:
+        return self.crypto_opportunity_score
+
+    def to_dict(self) -> dict[str, float]:
         return {
-            "equity": round(float(self.equity), 6),
-            "crypto": round(float(self.crypto), 6),
-            "equity_record_count": int(self.equity_record_count),
-            "crypto_record_count": int(self.crypto_record_count),
-            "record_count": int(self.record_count),
+            "equity_opportunity_score": _round_float(self.equity_opportunity_score),
+            "crypto_opportunity_score": _round_float(self.crypto_opportunity_score),
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> ScoreBreakdown:
+    def from_dict(cls, payload: dict[str, Any] | None) -> ScoreBreakdown:
+        data = payload or {}
         return cls(
-            equity=float(payload.get("equity", 0.0)),
-            crypto=float(payload.get("crypto", 0.0)),
-            equity_record_count=int(payload.get("equity_record_count", 0)),
-            crypto_record_count=int(payload.get("crypto_record_count", 0)),
-            record_count=int(payload.get("record_count", 0)),
+            equity_opportunity_score=float(data.get("equity_opportunity_score", data.get("equity", 0.0))),
+            crypto_opportunity_score=float(data.get("crypto_opportunity_score", data.get("crypto", 0.0))),
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ContributingEventSummary:
-    top_equity_records: list[ScoredRecord] = field(default_factory=list)
-    top_crypto_records: list[ScoredRecord] = field(default_factory=list)
+    canonical_symbol: str
+    asset: str
+    event_type: str
+    contribution: float
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "top_equity_records": [record.to_dict() for record in self.top_equity_records],
-            "top_crypto_records": [record.to_dict() for record in self.top_crypto_records],
+            "canonical_symbol": self.canonical_symbol,
+            "asset": self.asset,
+            "event_type": self.event_type,
+            "contribution": _round_float(self.contribution),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> ContributingEventSummary:
         return cls(
-            top_equity_records=[
-                ScoredRecord.from_dict(record)
-                for record in payload.get("top_equity_records", [])
-            ],
-            top_crypto_records=[
-                ScoredRecord.from_dict(record)
-                for record in payload.get("top_crypto_records", [])
+            canonical_symbol=str(payload.get("canonical_symbol", "")),
+            asset=str(payload.get("asset", "")),
+            event_type=str(payload.get("event_type", _UNKNOWN_EVENT_TYPE)),
+            contribution=float(payload.get("contribution", 0.0)),
+        )
+
+
+@dataclass(frozen=True)
+class SelectorRationale:
+    primary_reason: str
+    secondary_reasons: list[str] = field(default_factory=list)
+    top_contributing_events: list[ContributingEventSummary] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "primary_reason": self.primary_reason,
+            "secondary_reasons": list(self.secondary_reasons),
+            "top_contributing_events": [event.to_dict() for event in self.top_contributing_events],
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> SelectorRationale:
+        data = payload or {}
+        return cls(
+            primary_reason=str(data.get("primary_reason", "")),
+            secondary_reasons=[str(item) for item in data.get("secondary_reasons", [])],
+            top_contributing_events=[
+                ContributingEventSummary.from_dict(item)
+                for item in data.get("top_contributing_events", [])
             ],
         )
 
 
-@dataclass
+@dataclass(frozen=True)
+class VetoFlags:
+    panic_veto: bool = False
+    risk_off_penalty_applied: bool = False
+
+    def to_dict(self) -> dict[str, bool]:
+        return {
+            "panic_veto": bool(self.panic_veto),
+            "risk_off_penalty_applied": bool(self.risk_off_penalty_applied),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> VetoFlags:
+        data = payload or {}
+        return cls(
+            panic_veto=bool(data.get("panic_veto", False)),
+            risk_off_penalty_applied=bool(data.get("risk_off_penalty_applied", False)),
+        )
+
+
+@dataclass(frozen=True)
 class MarketSelectorDecision:
-    """Output of :meth:`MarketSelector.score`.
-
-    Attributes:
-        route:               The routing decision.
-        equity_score:        Aggregated equity news score in ``[0.0, 1.0]``.
-        crypto_score:        Aggregated crypto news score in ``[0.0, 1.0]``.
-        equity_record_count: Number of equity :class:`NewsIntelligenceRecord`
-            inputs.
-        crypto_record_count: Number of crypto :class:`NewsIntelligenceRecord`
-            inputs.
-        record_count:        Total :class:`NewsIntelligenceRecord` inputs.
-        regime_label:        Regime string provided to the selector, or
-            ``"UNKNOWN"`` if none was given.
-        regime_vetoed:       ``True`` when the regime forced ``RUN_NONE``
-            regardless of scores.
-        threshold_used:      The ``min_score_to_run`` threshold applied.
-        both_threshold_used: The ``both_threshold`` applied.
-        rationale:           Human-readable score breakdown.
-        scored_at:           ISO-8601 UTC timestamp of the scoring call.
-        top_equity_records:  Up to ``top_n`` highest-contributing equity
-            records for explainability.
-        top_crypto_records:  Up to ``top_n`` highest-contributing crypto
-            records for explainability.
-    """
-
     as_of_utc: str
     decision: MarketRoute
     scores: ScoreBreakdown
-    thresholds: dict[str, float]
-    regimes: dict[str, Any]
-    veto_flags: dict[str, bool]
-    rationale: str
-    contributing_events: ContributingEventSummary = field(default_factory=ContributingEventSummary)
+    thresholds: MarketSelectorConfig
+    regimes: MarketRegimes
+    veto_flags: VetoFlags
+    rationale: SelectorRationale
     version: str = "v1"
 
     @property
@@ -270,438 +346,405 @@ class MarketSelectorDecision:
 
     @property
     def equity_score(self) -> float:
-        return self.scores.equity
+        return self.scores.equity_opportunity_score
 
     @property
     def crypto_score(self) -> float:
-        return self.scores.crypto
-
-    @property
-    def equity_record_count(self) -> int:
-        return self.scores.equity_record_count
-
-    @property
-    def crypto_record_count(self) -> int:
-        return self.scores.crypto_record_count
-
-    @property
-    def record_count(self) -> int:
-        return self.scores.record_count
-
-    @property
-    def regime_label(self) -> str:
-        return str(self.regimes.get("label", "UNKNOWN"))
-
-    @property
-    def regime_vetoed(self) -> bool:
-        return bool(self.veto_flags.get("regime_vetoed", False))
-
-    @property
-    def threshold_used(self) -> float:
-        return float(self.thresholds.get("min_score_to_run", 0.0))
-
-    @property
-    def both_threshold_used(self) -> float:
-        return float(self.thresholds.get("both_threshold", 0.0))
+        return self.scores.crypto_opportunity_score
 
     @property
     def scored_at(self) -> str:
         return self.as_of_utc
 
-    @property
-    def top_equity_records(self) -> list[ScoredRecord]:
-        return self.contributing_events.top_equity_records
-
-    @property
-    def top_crypto_records(self) -> list[ScoredRecord]:
-        return self.contributing_events.top_crypto_records
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "as_of_utc": self.as_of_utc,
-            "decision": self.decision.value,
+            "decision": self.decision.name,
             "scores": self.scores.to_dict(),
             "thresholds": {
-                "min_score_to_run": float(self.threshold_used),
-                "both_threshold": float(self.both_threshold_used),
+                "low_opportunity_floor": _round_float(self.thresholds.low_opportunity_floor),
+                "high_opportunity_threshold": _round_float(self.thresholds.high_opportunity_threshold),
+                "both_margin": _round_float(self.thresholds.both_margin),
+                "minimum_score_gap": _round_float(self.thresholds.minimum_score_gap),
             },
-            "regimes": {
-                "label": self.regime_label,
-                "multiplier": float(self.regimes.get("multiplier", 1.0)),
-            },
-            "veto_flags": {
-                "regime_vetoed": self.regime_vetoed,
-            },
-            "rationale": self.rationale,
+            "regimes": self.regimes.to_dict(),
+            "veto_flags": self.veto_flags.to_dict(),
+            "rationale": self.rationale.to_dict(),
             "version": self.version,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> MarketSelectorDecision:
-        decision_raw = payload.get("decision", MarketRoute.RUN_NONE.value)
         return cls(
-            as_of_utc=str(payload.get("as_of_utc", "")),
-            decision=MarketRoute(decision_raw),
-            scores=ScoreBreakdown.from_dict(payload.get("scores", {})),
-            thresholds={
-                "min_score_to_run": float(
-                    payload.get("thresholds", {}).get("min_score_to_run", 0.35)
-                ),
-                "both_threshold": float(
-                    payload.get("thresholds", {}).get("both_threshold", 0.60)
-                ),
-            },
-            regimes={
-                "label": str(payload.get("regimes", {}).get("label", "UNKNOWN")),
-                "multiplier": float(payload.get("regimes", {}).get("multiplier", 1.0)),
-            },
-            veto_flags={
-                "regime_vetoed": bool(
-                    payload.get("veto_flags", {}).get("regime_vetoed", False)
-                )
-            },
-            rationale=str(payload.get("rationale", "")),
+            as_of_utc=str(payload.get("as_of_utc", _DEFAULT_REFERENCE_TIME)),
+            decision=_route_from_raw(payload.get("decision", MarketRoute.RUN_NONE.name)),
+            scores=ScoreBreakdown.from_dict(payload.get("scores")),
+            thresholds=MarketSelectorConfig.from_dict(payload.get("thresholds")),
+            regimes=MarketRegimes.from_dict(payload.get("regimes")),
+            veto_flags=VetoFlags.from_dict(payload.get("veto_flags")),
+            rationale=SelectorRationale.from_dict(payload.get("rationale")),
             version=str(payload.get("version", "v1")),
         )
 
 
-# ---------------------------------------------------------------------------
-# MarketSelector
-# ---------------------------------------------------------------------------
+def _derive_reference_time(news_events: list[NewsIntelligenceRecord]) -> str:
+    timestamps = [
+        parsed
+        for parsed in (_parse_iso_datetime(event.timestamp) for event in news_events)
+        if parsed is not None
+    ]
+    if not timestamps:
+        return _DEFAULT_REFERENCE_TIME
+    return _serialize_datetime(max(timestamps))
 
 
 class MarketSelector:
-    """Deterministic news-first market selector.
-
-    Parameters
-    ----------
-    config:
-        Optional configuration overrides.  Recognised keys:
-
-        ``min_score_to_run`` (float, default ``0.35``)
-            Minimum per-asset-class score required for that asset class to be
-            considered for routing.
-
-        ``both_threshold`` (float, default ``0.60``)
-            Score above which both asset classes are considered strong enough
-            to run simultaneously without applying the 1.5× dominance rule.
-
-        ``half_life_hours`` (float, default ``6.0``)
-            Half-life in hours for the exponential recency decay:
-            ``recency(t) = exp(-ln(2) / half_life_hours * age_hours)``.
-
-        ``top_n`` (int, default ``5``)
-            Maximum number of scored records to include in
-            :attr:`MarketSelectorDecision.top_equity_records` and
-            :attr:`MarketSelectorDecision.top_crypto_records`.
-    """
+    """Deterministic selector that routes between equities, crypto, both, or none."""
 
     def __init__(self, config: dict[str, Any] | MarketSelectorConfig | None = None) -> None:
-        self._config = (
-            config if isinstance(config, MarketSelectorConfig) else MarketSelectorConfig.from_dict(config)
-        )
-        self._min_score = self._config.min_score_to_run
-        self._both_threshold = self._config.both_threshold
-        self._half_life_hours = self._config.half_life_hours
-        self._top_n = self._config.top_n
-
-        if self._half_life_hours <= 0.0:
-            raise ValueError(
-                f"half_life_hours must be > 0, got {self._half_life_hours!r}"
-            )
-        if self._top_n < 0:
-            raise ValueError(f"top_n must be >= 0, got {self._top_n!r}")
-
-        # Pre-compute decay constant
-        self._lambda: float = math.log(2.0) / self._half_life_hours
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        self._config = config if isinstance(config, MarketSelectorConfig) else MarketSelectorConfig.from_dict(config)
 
     def score(
         self,
         records: list[NewsIntelligenceRecord],
         *,
-        regime_label: str = "UNKNOWN",
+        regime_label: str = "NORMAL",
+        as_of_utc: str | None = None,
     ) -> MarketSelectorDecision:
-        """Legacy adapter for ``score_input``."""
         return self.score_input(
-            MarketSelectorInput(records=records, regime_label=regime_label)
+            MarketSelectorInput(
+                as_of_utc=as_of_utc or _derive_reference_time(records),
+                news_events=list(records),
+                regimes=MarketRegimes(global_regime=regime_label),
+                risk_flags=MarketRiskFlags(),
+            )
         )
 
     def score_input(self, selector_input: MarketSelectorInput) -> MarketSelectorDecision:
-        """Score *records* and return a routing decision.
+        config = selector_input.config or self._config
+        as_of_dt = _parse_iso_datetime(selector_input.as_of_utc)
+        if as_of_dt is None:
+            as_of_dt = _parse_iso_datetime(_derive_reference_time(selector_input.news_events))
+        assert as_of_dt is not None
+        as_of_utc = _serialize_datetime(as_of_dt)
 
-        Parameters
-        ----------
-        records:
-            Provider-agnostic news intelligence records.  May be empty.
-        regime_label:
-            Optional market regime string, e.g. ``"PANIC"``, ``"RISK_OFF"``,
-            ``"EVENT_DRIVEN"``.  Case-sensitive (upper-case convention from
-            V2 ``regime_engine.py``).  Unknown values are treated as neutral.
+        regimes = selector_input.regimes.normalized()
+        panic_veto = selector_input.risk_flags.panic_mode or "PANIC" in {
+            regimes.global_regime,
+            regimes.equity_regime,
+            regimes.crypto_regime,
+        }
 
-        Returns
-        -------
-        MarketSelectorDecision
-            A fully populated decision with scores, route, rationale, and
-            contributing records.
-        """
-        scored_at = selector_input.as_of_utc or datetime.now(tz=timezone.utc).isoformat()
-        records = selector_input.records
-        regime_label = selector_input.regime_label
-
-        # 1. Partition by asset class
-        equity_records = [r for r in records if r.asset == "equity"]
-        crypto_records = [r for r in records if r.asset == "crypto"]
-
-        # 2. Score each asset class
-        equity_weights, equity_score_raw, equity_unknown_events = self._score_records(
-            equity_records,
-            "equity",
+        equity_result, equity_penalty = self._score_asset_class(
+            asset_class="equity",
+            news_events=selector_input.news_events,
+            as_of_utc=as_of_dt,
+            config=config,
+            regimes=regimes,
+            risk_flags=selector_input.risk_flags,
         )
-        crypto_weights, crypto_score_raw, crypto_unknown_events = self._score_records(
-            crypto_records,
-            "crypto",
+        crypto_result, crypto_penalty = self._score_asset_class(
+            asset_class="crypto",
+            news_events=selector_input.news_events,
+            as_of_utc=as_of_dt,
+            config=config,
+            regimes=regimes,
+            risk_flags=selector_input.risk_flags,
         )
 
-        # 3. Apply regime multipliers (before veto check)
-        regime_upper = regime_label.upper()
-        regime_vetoed = regime_upper in _VETO_REGIMES
-        multiplier = _REGIME_MULTIPLIERS.get(regime_upper, 1.0)
+        decision = self._decide_route(
+            equity_score=equity_result["score"],
+            crypto_score=crypto_result["score"],
+            panic_veto=panic_veto,
+            config=config,
+        )
 
-        equity_score = min(equity_score_raw * multiplier, 1.0)
-        crypto_score = min(crypto_score_raw * multiplier, 1.0)
-
-        # 4. Regime veto → RUN_NONE regardless of scores
-        if regime_vetoed:
-            route = MarketRoute.RUN_NONE
-        else:
-            route = self._decide(equity_score, crypto_score)
-
-        # 5. Build top-N contributing records for explainability
-        top_equity = self._top_records(equity_records, equity_weights)
-        top_crypto = self._top_records(crypto_records, crypto_weights)
-
-        # 6. Build rationale string
+        top_events = self._select_top_contributing_events(
+            decision=decision,
+            equity_contributions=equity_result["top_events"],
+            crypto_contributions=crypto_result["top_events"],
+        )
         rationale = self._build_rationale(
-            route=route,
-            equity_score=equity_score,
-            crypto_score=crypto_score,
-            equity_records=equity_records,
-            crypto_records=crypto_records,
-            regime_label=regime_label,
-            regime_vetoed=regime_vetoed,
-            multiplier=multiplier,
-            unknown_event_fallback_count=equity_unknown_events + crypto_unknown_events,
+            decision=decision,
+            equity_score=equity_result["score"],
+            crypto_score=crypto_result["score"],
+            config=config,
+            regimes=regimes,
+            panic_veto=panic_veto,
+            risk_off_penalty_applied=equity_penalty or crypto_penalty,
+            top_contributing_events=top_events,
         )
 
         return MarketSelectorDecision(
-            as_of_utc=scored_at,
-            decision=route,
+            as_of_utc=as_of_utc,
+            decision=decision,
             scores=ScoreBreakdown(
-                equity=round(equity_score, 6),
-                crypto=round(crypto_score, 6),
-                equity_record_count=len(equity_records),
-                crypto_record_count=len(crypto_records),
-                record_count=len(records),
+                equity_opportunity_score=equity_result["score"],
+                crypto_opportunity_score=crypto_result["score"],
             ),
-            thresholds={
-                "min_score_to_run": self._min_score,
-                "both_threshold": self._both_threshold,
-            },
-            regimes={"label": regime_label, "multiplier": multiplier},
-            veto_flags={"regime_vetoed": regime_vetoed},
+            thresholds=config,
+            regimes=regimes,
+            veto_flags=VetoFlags(
+                panic_veto=panic_veto,
+                risk_off_penalty_applied=equity_penalty or crypto_penalty,
+            ),
             rationale=rationale,
-            contributing_events=ContributingEventSummary(
-                top_equity_records=top_equity,
-                top_crypto_records=top_crypto,
-            ),
             version="v1",
         )
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _recency_weight(self, timestamp: str) -> float:
-        """Return exponential recency decay weight for an ISO-8601 timestamp.
-
-        ``recency(t) = exp(-lambda * age_hours)``
-
-        Unknown or malformed timestamps are treated as zero age (weight 1.0)
-        with a logged warning.
-        """
-        try:
-            event_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-            if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
-            now = datetime.now(tz=timezone.utc)
-            age_hours = max((now - event_time).total_seconds() / 3600.0, 0.0)
-            return math.exp(-self._lambda * age_hours)
-        except (ValueError, TypeError) as exc:
-            logger.warning(
-                "MarketSelector: could not parse timestamp %r — treating as age 0: %s",
-                timestamp,
-                exc,
-            )
-            return 1.0
-
-    def _canonical_event_type(self, event_type: str | None) -> str:
-        """Return canonical event type key for affinity lookup.
-
-        Policy:
-        - Normalize by stripping whitespace and uppercasing.
-        - Resolve explicit aliases (e.g. ``REGULATION`` → ``REGULATORY``).
-        - Preserve only canonical keys from ``EVENT_ASSET_AFFINITY``.
-        - Unknown values map to ``UNKNOWN``.
-        """
-        normalized = (event_type or "").strip().upper()
-        if not normalized:
-            return "UNKNOWN"
-        if normalized in EVENT_ASSET_AFFINITY:
-            return normalized
-        return _EVENT_TYPE_ALIASES.get(normalized, "UNKNOWN")
-
-    def _affinity(self, event_type: str, asset_class: str) -> tuple[float, bool]:
-        """Return ``(affinity, used_unknown_fallback)`` for *event_type*.
-
-        Unknown-event policy is explicitly neutral 0.5/0.5 to avoid accidental
-        directional bias when upstream event typing is missing or novel.
-        """
-        canonical = self._canonical_event_type(event_type)
-        used_unknown_fallback = canonical == "UNKNOWN"
-        entry = EVENT_ASSET_AFFINITY.get(canonical, _DEFAULT_AFFINITY)
-        return entry.get(asset_class, 0.5), used_unknown_fallback
-
-    def _score_records(
+    def _score_asset_class(
         self,
-        records: list[NewsIntelligenceRecord],
-        asset_class: str,
-    ) -> tuple[list[float], float, int]:
-        """Compute a weighted aggregate score for *records*.
-
-        Returns
-        -------
-        tuple[list[float], float, int]
-            ``(per_record_weights, aggregate_score, unknown_event_fallback_count)``
-
-            *per_record_weights* has the same length as *records* and contains
-            each record's unscaled contribution (used for top-N selection).
-
-            *aggregate_score* is in ``[0.0, 1.0]``.
-
-        Scoring formula (per record):
-            ``w_i = recency(timestamp_i) * impact_score_i
-                    * affinity(event_type_i, asset_class) * confidence_i``
-
-            ``score = sum(w_i) / max(N, 1)``  clipped to ``[0.0, 1.0]``
-        """
-        if not records:
-            return [], 0.0, 0
-
-        weights: list[float] = []
-        unknown_event_fallback_count = 0
-        for rec in records:
-            affinity, used_unknown_fallback = self._affinity(rec.event_type, asset_class)
-            if used_unknown_fallback:
-                unknown_event_fallback_count += 1
-            w = (
-                self._recency_weight(rec.timestamp)
-                * rec.impact_score
-                * affinity
-                * rec.confidence
-            )
-            weights.append(w)
-
-        score = sum(weights) / max(len(weights), 1)
-        score = max(0.0, min(1.0, score))
-        return weights, score, unknown_event_fallback_count
-
-    def _decide(self, equity_score: float, crypto_score: float) -> MarketRoute:
-        """Apply routing thresholds and return a :class:`MarketRoute`.
-
-        Logic (from audit §5.6):
-        - Both above ``both_threshold``  → ``RUN_BOTH``
-        - Both above ``min_score`` but neither dominates by 1.5×  → ``RUN_BOTH``
-        - Both above ``min_score``, one dominates by 1.5×  → that asset only
-        - Only equity above threshold  → ``RUN_EQUITIES``
-        - Only crypto above threshold  → ``RUN_CRYPTO``
-        - Neither above threshold  → ``RUN_NONE``
-        """
-        min_s = self._min_score
-        both_t = self._both_threshold
-
-        if equity_score >= both_t and crypto_score >= both_t:
-            return MarketRoute.RUN_BOTH
-
-        if equity_score >= min_s and crypto_score >= min_s:
-            if equity_score >= crypto_score * 1.5:
-                return MarketRoute.RUN_EQUITIES
-            if crypto_score >= equity_score * 1.5:
-                return MarketRoute.RUN_CRYPTO
-            return MarketRoute.RUN_BOTH
-
-        if equity_score >= min_s:
-            return MarketRoute.RUN_EQUITIES
-
-        if crypto_score >= min_s:
-            return MarketRoute.RUN_CRYPTO
-
-        return MarketRoute.RUN_NONE
-
-    def _top_records(
-        self,
-        records: list[NewsIntelligenceRecord],
-        weights: list[float],
-    ) -> list[ScoredRecord]:
-        """Return up to ``top_n`` :class:`ScoredRecord` sorted by weight desc."""
-        if not records:
-            return []
-        paired = sorted(zip(weights, records), key=lambda x: x[0], reverse=True)
-        return [
-            ScoredRecord(
-                canonical_symbol=rec.canonical_symbol,
-                event_type=rec.event_type,
-                asset=rec.asset,
-                raw_weight=round(w, 6),
-            )
-            for w, rec in paired[: self._top_n]
-        ]
-
-    @staticmethod
-    def _build_rationale(
         *,
-        route: MarketRoute,
+        asset_class: str,
+        news_events: list[NewsIntelligenceRecord],
+        as_of_utc: datetime,
+        config: MarketSelectorConfig,
+        regimes: MarketRegimes,
+        risk_flags: MarketRiskFlags,
+    ) -> tuple[dict[str, Any], bool]:
+        scored_events: list[ContributingEventSummary] = []
+        contributions: list[float] = []
+        for event in news_events:
+            contribution = self._event_contribution(
+                record=event,
+                asset_class=asset_class,
+                as_of_utc=as_of_utc,
+                config=config,
+            )
+            contributions.append(contribution)
+            scored_events.append(
+                ContributingEventSummary(
+                    canonical_symbol=event.canonical_symbol,
+                    asset=event.asset,
+                    event_type=canonicalize_event_type(event.event_type),
+                    contribution=contribution,
+                )
+            )
+
+        scored_events.sort(
+            key=lambda item: (item.contribution, item.canonical_symbol, item.asset, item.event_type),
+            reverse=True,
+        )
+        base_score = self._asset_opportunity_score(contributions, config)
+        adjusted_score, risk_off_penalty_applied = self._apply_regime_modifiers(
+            base_score=base_score,
+            asset_class=asset_class,
+            regimes=regimes,
+            risk_flags=risk_flags,
+        )
+        return {
+            "score": _round_float(adjusted_score),
+            "top_events": scored_events[:_DEFAULT_TOP_CONTRIBUTORS],
+        }, risk_off_penalty_applied
+
+    def _event_contribution(
+        self,
+        *,
+        record: NewsIntelligenceRecord,
+        asset_class: str,
+        as_of_utc: datetime,
+        config: MarketSelectorConfig,
+    ) -> float:
+        event_time = _parse_iso_datetime(record.timestamp)
+        if event_time is None:
+            event_time = as_of_utc
+        age_hours = max((as_of_utc - event_time).total_seconds() / 3600.0, 0.0)
+        half_life = (
+            config.recency_half_life_hours_equity
+            if asset_class == "equity"
+            else config.recency_half_life_hours_crypto
+        )
+        recency_weight = 0.5 ** (age_hours / half_life)
+        sentiment_factor = 0.5 + 0.5 * abs(float(record.sentiment_score))
+        affinity = get_event_asset_affinity(record.event_type, asset_class)
+        contribution = (
+            recency_weight
+            * float(record.impact_score)
+            * float(record.confidence)
+            * affinity
+            * sentiment_factor
+        )
+        return max(0.0, min(1.0, contribution))
+
+    def _asset_opportunity_score(
+        self,
+        contributions: list[float],
+        config: MarketSelectorConfig,
+    ) -> float:
+        if not contributions:
+            return 0.0
+        ranked = sorted(contributions, reverse=True)
+        top_k = ranked[:_TOP_K_INTENSITY]
+        while len(top_k) < _TOP_K_INTENSITY:
+            top_k.append(0.0)
+        intensity = (0.85 * top_k[0]) + (0.10 * top_k[1]) + (0.05 * top_k[2])
+        breadth_cutoff = max(config.low_opportunity_floor * 0.5, 0.05)
+        breadth = min(sum(1 for item in contributions if item >= breadth_cutoff) / 3.0, 1.0)
+        weak_ratio = sum(1 for item in contributions if item < breadth_cutoff / 2.0) / max(len(contributions), 1)
+        noise_penalty = min(weak_ratio * 0.05, 0.05)
+        score = (0.90 * intensity) + (0.10 * breadth) - noise_penalty
+        return max(0.0, min(1.0, score))
+
+    def _apply_regime_modifiers(
+        self,
+        *,
+        base_score: float,
+        asset_class: str,
+        regimes: MarketRegimes,
+        risk_flags: MarketRiskFlags,
+    ) -> tuple[float, bool]:
+        multiplier = 1.0
+        risk_off_penalty_applied = False
+        applicable_regimes = {regimes.global_regime, regimes.for_asset(asset_class)}
+
+        if "RISK_OFF" in applicable_regimes:
+            multiplier *= 0.75
+            risk_off_penalty_applied = True
+        if risk_flags.high_cross_asset_stress:
+            multiplier *= 0.90
+            risk_off_penalty_applied = True
+        if "EVENT_DRIVEN" in applicable_regimes:
+            multiplier *= 1.10
+
+        return max(0.0, min(1.0, base_score * multiplier)), risk_off_penalty_applied
+
+    def _decide_route(
+        self,
+        *,
         equity_score: float,
         crypto_score: float,
-        equity_records: list[NewsIntelligenceRecord],
-        crypto_records: list[NewsIntelligenceRecord],
-        regime_label: str,
-        regime_vetoed: bool,
-        multiplier: float,
-        unknown_event_fallback_count: int,
-    ) -> str:
-        """Construct a deterministic, human-readable rationale string."""
-        parts: list[str] = [f"route={route.value}"]
-        parts.append(
-            f"equity_score={equity_score:.4f} "
-            f"({len(equity_records)} record(s))"
+        panic_veto: bool,
+        config: MarketSelectorConfig,
+    ) -> MarketRoute:
+        if panic_veto:
+            return MarketRoute.RUN_NONE
+        if (
+            equity_score < config.low_opportunity_floor
+            and crypto_score < config.low_opportunity_floor
+        ):
+            return MarketRoute.RUN_NONE
+
+        score_gap = abs(equity_score - crypto_score)
+        if (
+            equity_score >= config.high_opportunity_threshold
+            and crypto_score >= config.high_opportunity_threshold
+            and score_gap <= config.both_margin
+        ):
+            return MarketRoute.RUN_BOTH
+        if (
+            equity_score >= config.high_opportunity_threshold
+            and (equity_score - crypto_score) >= config.minimum_score_gap
+        ):
+            return MarketRoute.RUN_EQUITIES
+        if (
+            crypto_score >= config.high_opportunity_threshold
+            and (crypto_score - equity_score) >= config.minimum_score_gap
+        ):
+            return MarketRoute.RUN_CRYPTO
+        if (
+            equity_score >= config.low_opportunity_floor
+            and crypto_score >= config.low_opportunity_floor
+            and score_gap <= config.minimum_score_gap
+        ):
+            return MarketRoute.RUN_BOTH
+        if (
+            equity_score >= config.low_opportunity_floor
+            and (equity_score - crypto_score) >= config.minimum_score_gap
+        ):
+            return MarketRoute.RUN_EQUITIES
+        if (
+            crypto_score >= config.low_opportunity_floor
+            and (crypto_score - equity_score) >= config.minimum_score_gap
+        ):
+            return MarketRoute.RUN_CRYPTO
+        return MarketRoute.RUN_NONE
+
+    def _select_top_contributing_events(
+        self,
+        *,
+        decision: MarketRoute,
+        equity_contributions: list[ContributingEventSummary],
+        crypto_contributions: list[ContributingEventSummary],
+    ) -> list[ContributingEventSummary]:
+        if decision == MarketRoute.RUN_EQUITIES:
+            selected = equity_contributions
+        elif decision == MarketRoute.RUN_CRYPTO:
+            selected = crypto_contributions
+        elif decision == MarketRoute.RUN_BOTH:
+            selected = equity_contributions + crypto_contributions
+        else:
+            selected = equity_contributions + crypto_contributions
+
+        ranked = sorted(
+            selected,
+            key=lambda item: (item.contribution, item.canonical_symbol, item.asset, item.event_type),
+            reverse=True,
         )
-        parts.append(
-            f"crypto_score={crypto_score:.4f} "
-            f"({len(crypto_records)} record(s))"
-        )
-        parts.append(f"regime={regime_label}")
-        if regime_vetoed:
-            parts.append("regime_vetoed=True (PANIC → RUN_NONE)")
-        elif multiplier != 1.0:
-            parts.append(f"regime_multiplier={multiplier:.2f}")
-        if unknown_event_fallback_count > 0:
-            parts.append(
-                "unknown_event_fallback="
-                f"{unknown_event_fallback_count} record(s) "
-                "(neutral_affinity=0.50/0.50)"
+        deduped: list[ContributingEventSummary] = []
+        seen: set[tuple[str, str, str]] = set()
+        for event in ranked:
+            key = (event.canonical_symbol, event.asset, event.event_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(event)
+            if len(deduped) >= _DEFAULT_TOP_CONTRIBUTORS:
+                break
+        return deduped
+
+    def _build_rationale(
+        self,
+        *,
+        decision: MarketRoute,
+        equity_score: float,
+        crypto_score: float,
+        config: MarketSelectorConfig,
+        regimes: MarketRegimes,
+        panic_veto: bool,
+        risk_off_penalty_applied: bool,
+        top_contributing_events: list[ContributingEventSummary],
+    ) -> SelectorRationale:
+        if panic_veto:
+            primary_reason = "Panic conditions vetoed all market routing decisions."
+        elif decision == MarketRoute.RUN_NONE and not top_contributing_events:
+            primary_reason = "No actionable normalized news events were available for either market."
+        elif decision == MarketRoute.RUN_NONE:
+            primary_reason = "Neither market cleared the configured opportunity floor with a decisive score gap."
+        elif decision == MarketRoute.RUN_BOTH:
+            primary_reason = (
+                "Equity and crypto opportunity scores are both actionable and remain within the configured both-market margin."
             )
-        return "; ".join(parts)
+        elif decision == MarketRoute.RUN_EQUITIES:
+            primary_reason = "Equity catalysts are stronger and clear the routing thresholds by a decisive margin."
+        else:
+            primary_reason = "Crypto catalysts are stronger and clear the routing thresholds by a decisive margin."
+
+        secondary_reasons = [
+            f"Equity opportunity score={equity_score:.4f}; crypto opportunity score={crypto_score:.4f}.",
+            (
+                "Thresholds applied: "
+                f"low_floor={config.low_opportunity_floor:.2f}, "
+                f"high_threshold={config.high_opportunity_threshold:.2f}, "
+                f"both_margin={config.both_margin:.2f}, "
+                f"minimum_gap={config.minimum_score_gap:.2f}."
+            ),
+            (
+                "Regimes evaluated: "
+                f"global={regimes.global_regime}, equity={regimes.equity_regime}, crypto={regimes.crypto_regime}."
+            ),
+        ]
+        if risk_off_penalty_applied:
+            secondary_reasons.append("Risk-off or cross-asset stress penalties reduced at least one opportunity score.")
+        if top_contributing_events:
+            top_event = top_contributing_events[0]
+            secondary_reasons.append(
+                "Top contributing event: "
+                f"{top_event.canonical_symbol} {top_event.event_type} ({top_event.asset}) "
+                f"contribution={top_event.contribution:.4f}."
+            )
+
+        return SelectorRationale(
+            primary_reason=primary_reason,
+            secondary_reasons=secondary_reasons,
+            top_contributing_events=top_contributing_events,
+        )
