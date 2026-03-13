@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import os
 from functools import lru_cache
@@ -324,3 +325,31 @@ def get_sentiment_features(ticker: str, dates: Iterable[Any], config: dict) -> p
     features = features.rename(columns={"index": "date"})
     features = features.fillna(0.0)
     return features
+
+
+def prefetch_sentiment_cache(tickers: Iterable[str], dates: Iterable[Any], config: dict) -> None:
+    """Warm sentiment cache in parallel without blocking core dataset assembly logic."""
+
+    sentiment_cfg = config.get("sentiment") or {}
+    if not sentiment_cfg.get("enabled", False):
+        return
+    if not bool(sentiment_cfg.get("async_prefetch", True)):
+        return
+
+    symbols = [t for t in tickers if t]
+    if not symbols:
+        return
+
+    workers = int(sentiment_cfg.get("prefetch_workers", min(8, max(1, len(symbols)))))
+
+    def _prefetch_one(ticker: str) -> None:
+        get_sentiment_features(ticker, dates, config)
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = {pool.submit(_prefetch_one, ticker): ticker for ticker in symbols}
+        for fut in as_completed(futures):
+            ticker = futures[fut]
+            try:
+                fut.result()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Sentiment prefetch failed for %s: %s", ticker, exc)

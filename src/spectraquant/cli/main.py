@@ -68,7 +68,7 @@ from spectraquant.core.time import (
     resolve_prediction_date_for_horizon,
 )
 from spectraquant.data.normalize import assert_price_frame, normalize_price_columns, normalize_price_frame
-from spectraquant.data.sentiment import SENTIMENT_COLUMNS, get_sentiment_features
+from spectraquant.data.sentiment import SENTIMENT_COLUMNS, get_sentiment_features, prefetch_sentiment_cache
 from spectraquant.data.retention import (
     is_post_training,
     mark_training_complete,
@@ -129,7 +129,9 @@ from spectraquant.portfolio.risk import compute_risk_score
 from spectraquant.portfolio.simulator import simulate_portfolio
 from spectraquant.dataset.builder import build_dataset as build_ml_dataset
 from spectraquant.dataset.io import load_dataset, latest_dataset_path_from_manifest
+from spectraquant.dataset.panel import build_price_feature_panel
 from spectraquant.features.ohlcv_features import compute_ohlcv_features
+from spectraquant.logging.progress import progress_iter
 from spectraquant.core.universe import load_universe as load_canonical_universe, update_nse_universe
 
 logger = logging.getLogger(__name__)
@@ -476,12 +478,47 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
         raise FileNotFoundError("No price data available to build dataset.")
 
     use_sentiment = bool(config.get("sentiment", {}).get("enabled", False))
+    if use_sentiment:
+        all_dates: list[pd.Timestamp] = []
+        for _df in price_data.values():
+            idx = _df.index if isinstance(_df.index, pd.DatetimeIndex) else pd.to_datetime(_df.get("date"), utc=True, errors="coerce")
+            all_dates.extend([d for d in pd.to_datetime(idx, utc=True, errors="coerce") if pd.notna(d)])
+        prefetch_sentiment_cache(list(price_data.keys()), all_dates, config)
     qa_cfg = config.get("qa", {}) if isinstance(config, dict) else {}
     min_rows = int(qa_cfg.get("min_price_rows", 252))
     min_non_null_ratio = float(qa_cfg.get("min_non_null_ratio", 0.98))
     min_eligible_tickers = int(qa_cfg.get("min_eligible_tickers", 10))
     eligibility_floor = MIN_ELIGIBILITY_FLOOR
     initial_ticker_count = len(tickers)
+    panel_cfg = config.get("dataset", {}) if isinstance(config, dict) else {}
+    if bool(panel_cfg.get("use_panel_builder", True)):
+        panel_dataset = build_price_feature_panel(price_data)
+        if not panel_dataset.empty and not use_sentiment:
+            dataset = panel_dataset.dropna().reset_index(drop=True)
+            run_quality_gates_dataset(dataset, config)
+            PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+            register_default_factors()
+            factor_metadata = get_factor_metadata()
+            factor_set_hash = get_factor_set_hash()
+            metadata_payload = {
+                "factor_set_hash": factor_set_hash,
+                "factors": factor_metadata,
+                "feature_schema": sorted(dataset.columns),
+                "date_range": {"start": dataset["date"].min(), "end": dataset["date"].max()},
+                "builder": "panel",
+            }
+            DATASET_METADATA.write_text(json.dumps(metadata_payload, indent=2, default=str))
+            dataset.to_csv(DATASET_CSV, index=False)
+            record_output(str(DATASET_CSV))
+            record_output(str(DATASET_METADATA))
+            try:
+                dataset.to_parquet(DATASET_PARQUET, index=False)
+                record_output(str(DATASET_PARQUET))
+                logger.info("Panel dataset saved to %s and %s", DATASET_PARQUET, DATASET_CSV)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to save dataset parquet %s: %s", DATASET_PARQUET, exc)
+            return dataset
+
     records = []
     skipped_missing_close = 0
     skipped_short = 0
@@ -490,7 +527,8 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     dropped_short: list[tuple[str, int]] = []
     dropped_low_non_null: list[tuple[str, int, float]] = []
     rows_per_ticker: list[int] = []
-    for ticker, df in price_data.items():
+    show_progress = not _is_verbose_mode() and len(price_data) > 1
+    for ticker, df in progress_iter(price_data.items(), "Building dataset panel", enabled=show_progress):
         prepared = _prepare_price_frame(df)
         prepared, eligibility = _sanitize_price_frame_for_dataset(prepared, ticker, config)
         if prepared is None:
@@ -1649,7 +1687,7 @@ def _load_price_history(ticker: str) -> pd.DataFrame | None:
     if parquet_path.exists():
         try:
             df = pd.read_parquet(parquet_path)
-            logger.info("Using cached yfinance data for %s from %s", ticker, parquet_path)
+            logger.debug("Using cached yfinance data for %s from %s", ticker, parquet_path)
             return _prepare_price_frame(df)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load Parquet for %s: %s", ticker, exc)
@@ -1657,7 +1695,7 @@ def _load_price_history(ticker: str) -> pd.DataFrame | None:
     if csv_path.exists():
         try:
             df = pd.read_csv(csv_path)
-            logger.info("Using cached yfinance data for %s from %s", ticker, csv_path)
+            logger.debug("Using cached yfinance data for %s from %s", ticker, csv_path)
             return _prepare_price_frame(df)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load CSV for %s: %s", ticker, exc)
@@ -1677,7 +1715,7 @@ def _load_intraday_history(ticker: str, interval: str) -> pd.DataFrame | None:
             continue
         try:
             df = pd.read_csv(path)
-            logger.info("Using cached intraday data for %s from %s", ticker, path)
+            logger.debug("Using cached intraday data for %s from %s", ticker, path)
             return _prepare_price_frame(df)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load intraday CSV for %s: %s", ticker, exc)
@@ -1817,7 +1855,8 @@ def _run_expert_meta_signals(config: Dict) -> pd.DataFrame | None:
     return blended
 def _collect_price_data(tickers: list[str]) -> Dict[str, pd.DataFrame]:
     data: Dict[str, pd.DataFrame] = {}
-    for ticker in tickers:
+    show_progress = not _is_verbose_mode() and len(tickers) > 1
+    for ticker in progress_iter(tickers, "Loading price cache", enabled=show_progress):
         price_df = _load_price_history(ticker)
         if price_df is not None:
             data[ticker] = price_df
@@ -1828,7 +1867,8 @@ def _collect_price_data(tickers: list[str]) -> Dict[str, pd.DataFrame]:
 
 def _collect_intraday_price_data(tickers: list[str], interval: str) -> Dict[str, pd.DataFrame]:
     data: Dict[str, pd.DataFrame] = {}
-    for ticker in tickers:
+    show_progress = not _is_verbose_mode() and len(tickers) > 1
+    for ticker in progress_iter(tickers, "Loading intraday cache", enabled=show_progress):
         price_df = _load_intraday_history(ticker, interval)
         if price_df is not None:
             data[ticker] = price_df
@@ -1913,7 +1953,8 @@ def cmd_download(*args: Any, **kwargs: Any) -> None:
         interval = str(intraday_cfg.get("interval", "5m"))
         lookback_days = int(intraday_cfg.get("lookback_days", 30))
         fallback_intervals = list(intraday_cfg.get("fallback_intervals", ["15m", "30m", "60m"]))
-        for ticker in tickers:
+        show_progress = not _is_verbose_mode() and len(tickers) > 1
+        for ticker in progress_iter(tickers, f"Downloading intraday ({interval})", enabled=show_progress):
             intraday_path = INTRADAY_PRICES_DIR / f"{ticker}_{interval}.csv"
             if intraday_path.exists():
                 logger.info("Using cached intraday data for %s from %s", ticker, intraday_path)
@@ -2011,7 +2052,8 @@ def cmd_features(*args: Any, **kwargs: Any) -> None:
     features_dir = Path("reports/features")
     features_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    for ticker, df in price_data.items():
+    show_progress = not _is_verbose_mode() and len(price_data) > 1
+    for ticker, df in progress_iter(price_data.items(), "Building features", enabled=show_progress):
         if df.empty:
             continue
         df = normalize_price_columns(df, ticker)
