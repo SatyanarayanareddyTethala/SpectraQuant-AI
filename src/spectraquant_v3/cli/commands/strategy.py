@@ -9,8 +9,23 @@ Available commands (registered as sub-commands of the ``strategy`` group):
 
 from __future__ import annotations
 
+from difflib import get_close_matches
+
 import typer
 from typing_extensions import Annotated
+
+
+
+def _strategy_not_found_error(strategy_id: str) -> str:
+    from spectraquant_v3.strategies.registry import StrategyRegistry
+
+    valid_ids = StrategyRegistry.list()
+    suggestions = get_close_matches(strategy_id, valid_ids, n=3, cutoff=0.4)
+    parts = [f"invalid strategy id: '{strategy_id}'"]
+    if suggestions:
+        parts.append(f"Did you mean: {', '.join(suggestions)}?")
+    parts.append(f"Available strategies: {', '.join(valid_ids)}")
+    return ' '.join(parts)
 
 strategy_app = typer.Typer(
     name="strategy",
@@ -80,8 +95,8 @@ def strategy_show(
 
     try:
         defn = StrategyRegistry.get(strategy_id)
-    except KeyError as exc:
-        typer.echo(f"[strategy show] ERROR: {exc}", err=True)
+    except KeyError:
+        typer.echo(f"[strategy show] ERROR: {_strategy_not_found_error(strategy_id)}", err=True)
         raise typer.Exit(1)
 
     typer.echo(json.dumps(defn.to_dict(), indent=2))
@@ -130,8 +145,8 @@ def strategy_run(
     # Look up strategy to determine asset class
     try:
         defn = StrategyRegistry.get(strategy_id)
-    except KeyError as exc:
-        typer.echo(f"[strategy run] ERROR: {exc}", err=True)
+    except KeyError:
+        typer.echo(f"[strategy run] ERROR: {_strategy_not_found_error(strategy_id)}", err=True)
         raise typer.Exit(1)
 
     # Load the appropriate config

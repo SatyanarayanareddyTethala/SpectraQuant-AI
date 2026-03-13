@@ -373,7 +373,10 @@ def validate_runtime_defaults(cfg: dict) -> None:
         raise ValueError("Configuration must include portfolio and alpha sections")
 
     markets = sorted({"UK" if t.endswith(".L") else "India" for t in tickers_upper})
-    logger.info("Active universe: %s", ", ".join(tickers_upper))
+    verbose = os.getenv("SPECTRAQUANT_VERBOSE", "").strip().lower() in {"1", "true", "yes", "on"}
+    logger.info("Active universe loaded: %s symbols", len(tickers_upper))
+    if verbose and tickers_upper:
+        logger.debug("Active universe tickers: %s", ", ".join(tickers_upper))
     logger.info("Synthetic mode enabled: %s", synthetic_flag)
     logger.info("Markets detected: %s", "/".join(markets))
 
