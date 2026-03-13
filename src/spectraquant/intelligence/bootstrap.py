@@ -22,7 +22,7 @@ def run_bootstrap() -> Dict[str, Any]:
         ``first_plan`` keys.
     """
     from spectraquant.intelligence.config import load_config
-    from spectraquant.intelligence.db.session import get_engine
+    from spectraquant.intelligence.db.session import init_db, get_engine
     from spectraquant.intelligence.db.models import Base
     from spectraquant.intelligence.premarket import premarket_plan
 

@@ -25,6 +25,7 @@ import pandas as pd
 
 from spectraquant_v3.core.news_schema import (
     NewsIntelligenceRecord,
+    validate_news_intelligence_record,
 )
 
 logger = logging.getLogger(__name__)

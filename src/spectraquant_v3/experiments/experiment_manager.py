@@ -571,6 +571,8 @@ class ExperimentManager:
         symbol_info = {}
         for sym, df in price_data.items():
             try:
+                import pandas as pd
+
                 symbol_info[sym] = {
                     "rows": len(df),
                     "start": str(df.index.min()) if len(df) > 0 else None,

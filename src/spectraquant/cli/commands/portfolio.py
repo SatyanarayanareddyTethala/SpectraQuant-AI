@@ -1,6 +1,7 @@
 """Portfolio-related CLI commands."""
 from __future__ import annotations
 
+from typing import Any
 
 
 def register_portfolio_commands(commands: dict[str, callable]) -> None:

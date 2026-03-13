@@ -171,6 +171,7 @@ def classify_regime(
     slope = features.get("slope_pct", 0.0)
     close_vs_sma = features.get("close_vs_sma", 0.0)
     breadth = features.get("breadth", 0.5)
+    vix = features.get("vix_proxy", 0.0)
     trend_str = features.get("trend_strength", 0.5)
 
     # ---- PANIC -------------------------------------------------------

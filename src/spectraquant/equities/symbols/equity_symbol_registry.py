@@ -13,7 +13,7 @@ Rules:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 from spectraquant.core.enums import AssetClass
