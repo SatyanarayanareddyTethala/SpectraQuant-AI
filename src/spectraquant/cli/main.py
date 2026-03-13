@@ -129,7 +129,7 @@ from spectraquant.portfolio.risk import compute_risk_score
 from spectraquant.portfolio.simulator import simulate_portfolio
 from spectraquant.dataset.builder import build_dataset as build_ml_dataset
 from spectraquant.dataset.io import load_dataset, latest_dataset_path_from_manifest
-from spectraquant.dataset.panel import build_price_feature_panel
+from spectraquant.dataset.panel import PANEL_REQUIRED_COLUMNS, build_price_feature_panel
 from spectraquant.features.ohlcv_features import compute_ohlcv_features
 from spectraquant.logging.progress import progress_iter
 from spectraquant.core.universe import load_universe as load_canonical_universe, update_nse_universe
@@ -198,6 +198,15 @@ def _sentiment_functions() -> tuple[Any, Any]:
 
 def _sentiment_enabled(config: Dict) -> bool:
     return bool((config.get("sentiment") or {}).get("enabled", False))
+
+
+
+def _panel_dataset_is_usable(dataset: pd.DataFrame) -> bool:
+    missing = [col for col in PANEL_REQUIRED_COLUMNS if col not in dataset.columns]
+    if missing:
+        logger.warning("Panel dataset missing required columns: %s", ", ".join(missing))
+        return False
+    return True
 
 def _exchange_from_ticker(ticker: str) -> str:
     if ticker.upper().endswith(".NS"):
@@ -493,11 +502,12 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     use_sentiment = _sentiment_enabled(config)
     if use_sentiment:
         get_sentiment_features, prefetch_sentiment_cache = _sentiment_functions()
-        all_dates: list[pd.Timestamp] = []
+        unique_dates = set()
         for _df in price_data.values():
             idx = _df.index if isinstance(_df.index, pd.DatetimeIndex) else pd.to_datetime(_df.get("date"), utc=True, errors="coerce")
-            all_dates.extend([d for d in pd.to_datetime(idx, utc=True, errors="coerce") if pd.notna(d)])
-        prefetch_sentiment_cache(list(price_data.keys()), all_dates, config)
+            normalized = pd.to_datetime(idx, utc=True, errors="coerce")
+            unique_dates.update(d.normalize() for d in normalized if pd.notna(d))
+        prefetch_sentiment_cache(list(price_data.keys()), sorted(unique_dates), config)
     qa_cfg = config.get("qa", {}) if isinstance(config, dict) else {}
     min_rows = int(qa_cfg.get("min_price_rows", 252))
     min_non_null_ratio = float(qa_cfg.get("min_non_null_ratio", 0.98))
@@ -508,8 +518,8 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     panel_cfg = config.get("dataset", {}) if isinstance(config, dict) else {}
     if bool(panel_cfg.get("use_panel_builder", True)):
         panel_dataset = build_price_feature_panel(price_data)
-        if not panel_dataset.empty and not use_sentiment:
-            dataset = panel_dataset.dropna().reset_index(drop=True)
+        if not panel_dataset.empty and not use_sentiment and _panel_dataset_is_usable(panel_dataset):
+            dataset = panel_dataset.dropna(subset=["date", "ticker", "Close", "ret_1d", "ret_5d", "sma_5", "vol_5", "rsi_14", "label"]).reset_index(drop=True)
             run_quality_gates_dataset(dataset, config)
             elapsed = time.perf_counter() - stage_start
             logger.info(
@@ -551,7 +561,7 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     dropped_low_non_null: list[tuple[str, int, float]] = []
     rows_per_ticker: list[int] = []
     show_progress = not _is_verbose_mode() and len(price_data) > 1
-    for ticker, df in progress_iter(price_data.items(), "Building dataset panel", enabled=show_progress):
+    for ticker, df in progress_iter(price_data.items(), "Building per-ticker dataset", enabled=show_progress):
         prepared = _prepare_price_frame(df)
         prepared, eligibility = _sanitize_price_frame_for_dataset(prepared, ticker, config)
         if prepared is None:

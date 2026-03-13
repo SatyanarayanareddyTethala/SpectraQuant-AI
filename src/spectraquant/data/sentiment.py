@@ -340,10 +340,15 @@ def prefetch_sentiment_cache(tickers: Iterable[str], dates: Iterable[Any], confi
     if not symbols:
         return
 
+    materialized_dates = pd.to_datetime(list(dates), utc=True, errors="coerce")
+    materialized_dates = pd.DatetimeIndex(materialized_dates).dropna().normalize().unique().sort_values()
+    if materialized_dates.empty:
+        return
+
     workers = int(sentiment_cfg.get("prefetch_workers", min(8, max(1, len(symbols)))))
 
     def _prefetch_one(ticker: str) -> None:
-        get_sentiment_features(ticker, dates, config)
+        get_sentiment_features(ticker, materialized_dates, config)
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = {pool.submit(_prefetch_one, ticker): ticker for ticker in symbols}
