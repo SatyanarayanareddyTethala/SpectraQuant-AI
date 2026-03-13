@@ -192,6 +192,9 @@ pip install -r requirements-v3.txt # V3 additional deps
 pip install -e .
 ```
 
+> [!IMPORTANT]
+> Use `pip install -e .` (with the trailing dot). `pip install -e` without a path will fail.
+
 Windows users may alternatively run `install.bat`; macOS/Linux can use
 `install.sh`.
 
@@ -231,7 +234,7 @@ A typical research loop using V3:
 
 4. Run and compare experiments (from stored runs)
    sqv3 experiment list
-   sqv3 experiment compare run_a run_b
+   sqv3 experiment compare run_a,run_b
 
 5. Backtest a registered strategy
    sqv3 backtest run --asset-class crypto --strategy crypto_momentum_v1
@@ -281,6 +284,8 @@ spectraquant predict-ml --ticker AAPL --rows 10
 ### V3 (`sqv3`)
 
 ```bash
+# IMPORTANT: there is no `research run` or `experiment run` subcommand under sqv3
+# Use `sqv3 research dataset` and `sqv3 experiment list|show|compare` instead
 sqv3 --help
 sqv3 doctor
 sqv3 version
@@ -302,11 +307,13 @@ sqv3 research dataset --asset-class crypto
 sqv3 strategy list
 sqv3 strategy show crypto_momentum_v1
 sqv3 strategy run crypto_momentum_v1
+# Backward-compatible flag form is also supported
+sqv3 strategy run --strategy crypto_momentum_v1
 
 # Experiments / backtesting / feature store
 sqv3 experiment list
 sqv3 experiment show <experiment_id>
-sqv3 experiment compare <id_1> <id_2>
+sqv3 experiment compare <id_1>,<id_2>
 sqv3 backtest run --asset-class crypto --strategy crypto_momentum_v1
 sqv3 feature-store list
 sqv3 feature-store query --feature-name crypto_tech_factors
@@ -323,11 +330,11 @@ sqv3 universe validate
 |---|---|---|---|
 | `crypto` | `run`, `download`, `universe` | `signals` | - |
 | `equity` | `run`, `download` | `universe`, `signals` | - |
-| `research` | `dataset` | - | `research run` |
+| `research` | `dataset` | - | `run` (not implemented; use `research dataset`) |
 | `strategy` | `list`, `show`, `run` | - | - |
-| `experiment` | `list`, `show`, `compare` | - | `run`, `results` |
+| `experiment` | `list`, `show`, `compare` | - | `run`, `results` (not implemented) |
 | `feature-store` | `list`, `query` | - | `build` |
-| `strategy-portfolio` | `list`, `run` | - | alias command `strategy portfolio` |
+| `strategy-portfolio` | `list`, `run` | - | alias command `strategy portfolio` (not implemented) |
 
 ### V3 Run Modes
 

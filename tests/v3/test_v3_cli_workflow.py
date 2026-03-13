@@ -198,3 +198,19 @@ def test_experiment_compare_shows_expanded_metrics(monkeypatch):
     assert "TOTAL_RET" in result.stdout
     assert "CALMAR" in result.stdout
     assert "N_STEPS" in result.stdout
+
+
+def test_research_help_explicitly_calls_out_missing_run_command():
+    runner = CliRunner()
+    result = runner.invoke(app, ["research", "--help"])
+    assert result.exit_code == 0
+    assert "research run" in result.stdout
+    assert "not implemented" in result.stdout
+
+
+def test_experiment_help_explicitly_calls_out_missing_run_command():
+    runner = CliRunner()
+    result = runner.invoke(app, ["experiment", "--help"])
+    assert result.exit_code == 0
+    assert "experiment run" in result.stdout
+    assert "no" in result.stdout.lower()

@@ -14,7 +14,7 @@ from typing_extensions import Annotated
 
 experiment_app = typer.Typer(
     name="experiment",
-    help="Experiment tracking and comparison commands.",
+    help="Experiment tracking and comparison commands. Note: no 'experiment run' command; use list/show/compare or backtest run.",
     no_args_is_help=True,
 )
 
