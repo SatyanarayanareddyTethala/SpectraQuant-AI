@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from spectraquant.providers.interfaces import NewsProvider
-from spectraquant.sentiment.newsapi_provider import fetch_news_items
+from spectraquant.sentiment.newsapi_provider import _get_api_key, fetch_news_items
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +55,7 @@ class NewsAPIProvider(NewsProvider):
 
     def is_healthy(self) -> bool:
         """Check if NewsAPI provider is healthy."""
-        import os
-        
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-        except Exception:
-            pass
-        
-        api_key = os.getenv("NEWSAPI_KEY")
-        return api_key is not None and len(api_key) > 0
+        return _get_api_key() is not None
 
     def get_name(self) -> str:
         """Get the name of this provider."""
