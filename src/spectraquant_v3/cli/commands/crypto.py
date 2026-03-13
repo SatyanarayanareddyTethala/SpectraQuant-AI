@@ -31,7 +31,7 @@ def crypto_run(
     """
     from spectraquant_v3.core import config as config_mod
     from spectraquant_v3.core.enums import RunMode
-    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError, UniverseValidationError
+    from spectraquant_v3.core.errors import SpectraQuantError, UniverseValidationError
     from spectraquant_v3.pipeline.crypto_pipeline import run_crypto_pipeline
 
     try:

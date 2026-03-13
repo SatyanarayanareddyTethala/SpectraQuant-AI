@@ -312,7 +312,6 @@ def run_quality_gates_price_frame(
             # Check if this might be a corporate action issue
             col_map_lower = {col.lower(): col for col in df.columns}
             has_adj_close = any(c in col_map_lower for c in ("adj_close", "adj close"))
-            has_close = "close" in col_map_lower
             
             # If we used close but adj_close exists, check if adj_close is normal
             if canonical_col.lower() == "close" and has_adj_close:

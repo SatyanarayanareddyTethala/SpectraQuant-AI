@@ -129,7 +129,7 @@ class CacheManager:
             ts = info.get("ingested_at") or info.get("last_updated")
             if ts:
                 try:
-                    updated = datetime.datetime.fromisoformat(ts)
+                    updated = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
                     if updated.tzinfo is None:
                         updated = updated.replace(tzinfo=datetime.timezone.utc)
                     age = (datetime.datetime.now(tz=datetime.timezone.utc) - updated).total_seconds()

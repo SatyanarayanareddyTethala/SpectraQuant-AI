@@ -13,12 +13,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from spectraquant.core.enums import AssetClass, RunMode
-from spectraquant.core.errors import EmptyOHLCVError
+from spectraquant.core.enums import RunMode
 from spectraquant.equities.execution.paper_executor import EquityPaperExecutor
 from spectraquant.equities.ingestion.price_downloader import EquityPriceDownloader
 from spectraquant.equities.policy.allocator import EquityAllocator

@@ -6,7 +6,6 @@ returns conditional on detected events and market regime controls.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 import pandas as pd

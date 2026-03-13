@@ -6,7 +6,6 @@ Uses sentence-transformers when available; falls back to TF-IDF.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 

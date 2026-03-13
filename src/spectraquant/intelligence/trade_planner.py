@@ -206,7 +206,6 @@ def generate_premarket_plan(
         Plan with keys: ``plan_date``, ``as_of``, ``regime``, ``trades``,
         ``status``, ``output_path``.
     """
-    rng = np.random.default_rng(seed)
     cfg = dict(_DEFAULT_CONFIG)
     if config:
         cfg.update(config)
