@@ -22,8 +22,9 @@ event-driven + technical hybrid strategies.
 8. [Testing](#8-testing)
 9. [Current Research Areas](#9-current-research-areas)
 10. [Roadmap](#10-roadmap)
-11. [Documentation](#11-documentation)
-12. [Contributing](#12-contributing)
+11. [ML Predictive Analytics Module](#11-ml-predictive-analytics-module)
+12. [Documentation](#12-documentation)
+13. [Contributing](#13-contributing)
 
 ---
 
@@ -268,6 +269,13 @@ spectraquant signals
 # Portfolio build
 spectraquant portfolio
 
+# --- ML Predictive Analytics (new) ---
+# Train Random Forest + XGBoost classifiers with walk-forward validation
+spectraquant train-ml --ticker AAPL
+
+# Generate ensemble ML signals and print last 10 rows
+spectraquant predict-ml --ticker AAPL --rows 10
+
 # Additional: build-dataset, train, predict, score, eval, universe utilities
 ```
 
@@ -369,7 +377,101 @@ See [CHANGELOG.md](CHANGELOG.md) for completed work.
 
 ---
 
-## 11. Documentation
+## 11. ML Predictive Analytics Module
+
+### Overview
+
+`src/spectraquant/ml/` is a production-quality supervised classification layer
+that sits cleanly on top of the existing SpectraQuant OHLCV and signal
+infrastructure.
+
+| Module | Purpose |
+|---|---|
+| `features.py` | 13-column ML feature set (returns, volatility, SMA ratios, RSI-14, MACD, sentiment) |
+| `targets.py` | Configurable forward-return binary classification targets |
+| `models.py` | Random Forest + optional XGBoost factories with fixed seeds |
+| `walk_forward.py` | Leakage-free expanding-window walk-forward validation |
+| `importance.py` | Feature importance extraction → `reports/ml/importance/` |
+| `forecast.py` | Optional SARIMAX directional probability signal |
+| `ensemble.py` | Weighted ensemble of RF + XGB + SARIMAX → signal score in {-1, 0, 1} |
+| `pipeline.py` | End-to-end orchestrator, writes signals to `reports/ml/signals/` |
+
+### Quick start
+
+```bash
+# Download data first
+spectraquant download --ticker AAPL
+
+# Train models and run walk-forward validation
+spectraquant train-ml --ticker AAPL
+
+# Generate and display the latest ensemble signals
+spectraquant predict-ml --ticker AAPL --rows 10
+```
+
+Output files are written to:
+
+```
+reports/ml/
+├── signals/       ml_signals_<timestamp>.csv
+├── importance/    feature_importance_rf_<timestamp>.csv
+│                  feature_importance_xgb_<timestamp>.csv
+└── eval/          rf_folds_<timestamp>.csv
+                   xgb_folds_<timestamp>.csv
+```
+
+### Configuration (`config/base.yaml`)
+
+```yaml
+ml:
+  enabled: true
+  horizon: 1          # forward-return look-ahead in bars
+  train_size: 252     # rows per training window (≈ 1 year of daily bars)
+  test_size: 21       # rows per test window (≈ 1 month)
+  step_size: 21       # walk-forward step
+  threshold: 0.55     # buy/sell probability threshold
+  use_xgboost: true   # requires: pip install xgboost
+  use_sarimax: false  # requires: pip install statsmodels
+  weights:
+    rf: 0.4           # Random Forest weight in ensemble
+    xgb: 0.4          # XGBoost weight in ensemble
+    ts: 0.2           # SARIMAX weight in ensemble
+```
+
+### Dependencies
+
+| Dependency | Required | Install |
+|---|---|---|
+| `scikit-learn` | Yes (core dep) | included |
+| `xgboost` | Optional | `pip install xgboost` or `pip install 'spectraquant[ml]'` |
+| `statsmodels` | Optional | `pip install statsmodels` or `pip install 'spectraquant[opt]'` |
+
+### Signal output format
+
+`ensemble_to_signal` maps the blended probability to:
+
+| probability | signal_score | meaning |
+|---|---|---|
+| > threshold | +1 | buy |
+| < 1 − threshold | −1 | sell |
+| otherwise | 0 | hold |
+
+The `signal_score` column is compatible with the existing `AgentOutput.signal_score`
+convention so ML signals can be merged with rule-based signals via
+`spectraquant.models.ensemble.compute_ensemble_scores`.
+
+### Anti-leakage principles
+
+- Data is **never shuffled** — splits are purely positional/temporal.
+- Each fold's training window ends strictly before its test window begins.
+- `add_target` uses `shift(-horizon)` so the label always refers to a
+  strictly future observation.
+- The pipeline validates the DatetimeIndex and rejects pre-2000 timestamps
+  (guards against the epoch-millisecond regression bug).
+
+---
+
+## 12. Documentation
 
 | Location | Contents |
 |---|---|
@@ -382,7 +484,7 @@ See [CHANGELOG.md](CHANGELOG.md) for completed work.
 
 ---
 
-## 12. Contributing
+## 13. Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding guidelines, PR checklist,
 and V3 development conventions.

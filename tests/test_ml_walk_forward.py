@@ -97,12 +97,14 @@ def test_walk_forward_missing_column_raises():
 
 
 def test_walk_forward_fresh_model_per_fold():
-    """Each fold must use an independent model; verify by checking non-identical probs."""
+    """Each fold must use an independent model; verify by checking fold metadata differs."""
     df = _make_df(600)
     results = walk_forward_validate(df, _FEATURES, get_random_forest, train_size=200, test_size=50, step_size=50)
-    if len(results) >= 2 and results[0].probabilities and results[1].probabilities:
-        # Probabilities from different folds are very unlikely to be identical
-        assert results[0].probabilities != results[1].probabilities or True  # soft check
+    # Verify each fold has a distinct training window
+    train_starts = [r.train_start for r in results]
+    train_ends = [r.train_end for r in results]
+    assert len(set(train_starts)) == len(results), "Folds must have distinct training start positions"
+    assert len(set(train_ends)) == len(results), "Folds must have distinct training end positions"
 
 
 def test_walk_forward_preserves_chronological_order():
