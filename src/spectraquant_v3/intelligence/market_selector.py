@@ -7,7 +7,6 @@ above the V3 strategy runner.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any

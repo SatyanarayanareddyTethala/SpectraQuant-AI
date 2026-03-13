@@ -15,7 +15,6 @@ Usage
 from __future__ import annotations
 
 import math
-import statistics
 from dataclasses import dataclass
 from typing import List, Optional
 

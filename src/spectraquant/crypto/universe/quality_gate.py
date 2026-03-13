@@ -20,7 +20,6 @@ Quality gate defaults
 """
 from __future__ import annotations
 
-import csv
 import logging
 import math
 from datetime import datetime, timezone

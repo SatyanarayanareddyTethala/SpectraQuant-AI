@@ -31,7 +31,7 @@ def equity_run(
     """
     from spectraquant_v3.core.config import get_equity_config
     from spectraquant_v3.core.enums import RunMode
-    from spectraquant_v3.core.errors import InvalidRunModeError, SpectraQuantError, UniverseValidationError
+    from spectraquant_v3.core.errors import SpectraQuantError, UniverseValidationError
     from spectraquant_v3.pipeline.equity_pipeline import run_equity_pipeline
 
     try:

@@ -16,10 +16,9 @@ position sizing beyond the basics are placeholders.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 
 from spectraquant_v3.core.schema import AllocationRow
 from spectraquant_v3.pipeline.meta_policy import PolicyDecision

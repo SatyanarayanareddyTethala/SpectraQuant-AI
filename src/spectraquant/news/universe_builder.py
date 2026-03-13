@@ -9,17 +9,15 @@ This module implements news-driven ticker universe construction:
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
-from spectraquant.news.schema import CanonicalArticle, normalize_article, dedupe_key
+from spectraquant.news.schema import normalize_article, dedupe_key
 from spectraquant.utils.news_universe import write_latest_news_universe
 
 logger = logging.getLogger(__name__)

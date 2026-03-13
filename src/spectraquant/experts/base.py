@@ -4,7 +4,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import pandas as pd
 
@@ -50,7 +49,6 @@ class BaseExpert(ABC):
         Returns:
             List of ExpertSignal objects
         """
-        pass
     
     def get_min_data_rows(self) -> int:
         """Minimum number of data rows required for this expert."""

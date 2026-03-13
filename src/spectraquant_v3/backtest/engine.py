@@ -756,8 +756,8 @@ class BacktestEngine:
     ) -> float:
         """Estimate how many steps occur in one calendar year."""
         try:
-            start = datetime.fromisoformat(start_date_str)
-            end = datetime.fromisoformat(end_date_str)
+            start = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
             days = max(1.0, (end - start).days)
             return n_steps * 365.25 / days
         except Exception:  # noqa: BLE001
