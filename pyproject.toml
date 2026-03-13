@@ -64,6 +64,10 @@ opt = [
   "riskfolio-lib",
   "arch",
 ]
+ml = [
+  "xgboost",
+  "statsmodels",
+]
 backtest = [
   "vectorbt",
   "empyrical",
