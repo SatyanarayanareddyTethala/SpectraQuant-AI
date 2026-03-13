@@ -34,7 +34,7 @@ USAGE = (
     "explain-portfolio|compare-runs|"
     "crypto-run|crypto-stream|onchain-scan|agents-run|allocate|"
     "equity-run|equity-download|equity-universe|equity-signals] [--research] [--use-sentiment] [--test-mode] "
-    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"]"
+    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"] [--verbose]"
 )
 
 
@@ -88,7 +88,7 @@ def _print_usage() -> None:
     print("    release-check    - Verify release readiness")
 
 
-def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool]:
+def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool, bool]:
     """Parse CLI override flags."""
     use_sentiment = False
     test_mode = False
@@ -97,6 +97,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
     universe: str | None = None
     from_news = False
     cleaned = []
+    verbose = False
     
     it = iter(args)
     for arg in it:
@@ -115,6 +116,9 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
         if arg == "--from-news":
             from_news = True
             continue
+        if arg == "--verbose":
+            verbose = True
+            continue
         if arg.startswith("--universe"):
             value = None
             if arg == "--universe":
@@ -126,7 +130,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
             continue
         cleaned.append(arg)
     
-    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news
+    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose
 
 
 def _load_config() -> dict:
@@ -166,7 +170,7 @@ def main() -> None:
     register_equity_commands(commands)
     
     args = sys.argv[1:]
-    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news = _parse_cli_overrides(args)
+    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose = _parse_cli_overrides(args)
     
     if "-h" in args or "--help" in args:
         _print_usage()
@@ -188,6 +192,9 @@ def main() -> None:
         os.environ["SPECTRAQUANT_UNIVERSE"] = universe
     if from_news:
         os.environ["SPECTRAQUANT_FROM_NEWS"] = "true"
+    if verbose:
+        os.environ["SPECTRAQUANT_VERBOSE"] = "true"
+        logging.getLogger().setLevel(logging.DEBUG)
     
     if len(args) < 1:
         logger.error(USAGE)

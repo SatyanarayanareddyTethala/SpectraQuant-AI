@@ -175,8 +175,13 @@ USAGE = (
     "explain-portfolio|compare-runs|research-run|research-status|research-history|"
     "crypto-run|crypto-stream|onchain-scan|agents-run|allocate|crypto-ingest-dataset|"
     "equity-run|equity-download|equity-universe|equity-signals] [--research] [--use-sentiment] [--test-mode] "
-    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"]"
+    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"] [--verbose]"
 )
+
+
+def _is_verbose_mode() -> bool:
+    value = os.getenv("SPECTRAQUANT_VERBOSE", "").strip().lower()
+    return value in {"1", "true", "yes", "on"} or logger.isEnabledFor(logging.DEBUG)
 
 
 def _exchange_from_ticker(ticker: str) -> str:
@@ -195,6 +200,7 @@ def _apply_resolved_tickers(config: Dict, tickers: Iterable[str]) -> None:
 
 
 def _resolve_tickers_with_meta(config: Dict) -> Tuple[Tuple[str, ...], Dict[str, Any]]:
+    logger.info("Loading universe...")
     tickers, meta = resolve_universe(config)
     if not tickers:
         raise ValueError("Universe tickers must be provided via external inputs (config or CSV).")
@@ -215,14 +221,10 @@ def _log_universe_resolution(tickers: Iterable[str], meta: Dict[str, Any], conte
     cap_reason = meta.get("cap_reason")
     capped_count = meta.get("capped_count")
     raw_count = meta.get("raw_count")
-    logger.info(
-        "%s tickers resolved: count=%s source=%s sample=%s",
-        context,
-        len(tickers_list),
-        source,
-        ", ".join(tickers_list[:5]),
-    )
-    logger.info("%s resolved %s tickers (source=%s, raw=%s).", context, len(tickers_list), source, raw_count)
+    preview_count = min(3, len(tickers_list))
+    logger.info("%s universe loaded: %s symbols (source=%s, raw=%s).", context, len(tickers_list), source, raw_count)
+    if preview_count:
+        logger.info("%s universe preview: %s", context, ", ".join(tickers_list[:preview_count]))
     if selected_sets:
         logger.info("%s selected universe sets: %s", context, ", ".join(selected_sets))
     if cap_reason:
@@ -242,7 +244,8 @@ def _log_universe_resolution(tickers: Iterable[str], meta: Dict[str, Any], conte
             invalid_suffix,
             ", ".join(meta.get("dropped_invalid_suffix") or []),
         )
-    logger.info("%s final tickers for run: %s", context, ", ".join(tickers_list))
+    if _is_verbose_mode() and tickers_list:
+        logger.debug("%s full universe tickers: %s", context, ", ".join(tickers_list))
 
 
 def _generate_price_history(
@@ -1267,7 +1270,7 @@ def _print_usage() -> None:
     print(USAGE)
 
 
-def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool]:
+def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool, bool]:
     cleaned: list[str] = []
     use_sentiment = False
     test_mode = False
@@ -1275,6 +1278,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
     dry_run = False
     universe = None
     from_news = False
+    verbose = False
     it = iter(args)
     for arg in it:
         if arg == "--use-sentiment":
@@ -1292,6 +1296,9 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
         if arg == "--from-news":
             from_news = True
             continue
+        if arg == "--verbose":
+            verbose = True
+            continue
         if arg.startswith("--universe"):
             value = None
             if arg == "--universe":
@@ -1302,7 +1309,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
                 universe = value
             continue
         cleaned.append(arg)
-    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news
+    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose
 
 
 def _is_research_mode() -> bool:
@@ -1863,13 +1870,18 @@ def cmd_download(*args: Any, **kwargs: Any) -> None:
 
     if universe_cfg.get("dry_run"):
         logger.info("Universe dry-run enabled; skipping downloads.")
-        logger.info("Resolved %s tickers (sample: %s)", len(tickers), ", ".join(tickers[:20]))
+        preview = ", ".join(tickers[:3])
+        logger.info("Universe loaded: %s symbols%s", len(tickers), f" (preview: {preview})" if preview else "")
+        if _is_verbose_mode() and tickers:
+            logger.debug("Full universe tickers: %s", ", ".join(tickers))
         return
     PRICES_DIR.mkdir(parents=True, exist_ok=True)
 
     if synthetic_enabled:
         logger.info("Synthetic data generation explicitly enabled; using seeded price history generator.")
-        logger.info("Generating cached data for tickers: %s", ", ".join(tickers))
+        logger.info("Generating cached data for %s symbols", len(tickers))
+        if _is_verbose_mode() and tickers:
+            logger.debug("Generating cached data for tickers: %s", ", ".join(tickers))
         for idx, ticker in enumerate(tickers):
             df = _generate_price_history(ticker, seed=idx, years=retention_years)
             _save_price_history(ticker, df, retention_years=retention_years)
@@ -2586,7 +2598,10 @@ def cmd_refresh(*args: Any, **kwargs: Any) -> None:
     config = kwargs.get("config") or _load_config()
     if config.get("universe", {}).get("dry_run", False):
         tickers, _ = resolve_universe(config)
-        logger.info("Refresh dry-run: resolved %s tickers (sample: %s)", len(tickers), ", ".join(tickers[:20]))
+        preview = ", ".join(tickers[:3])
+        logger.info("Refresh dry-run universe loaded: %s symbols%s", len(tickers), f" (preview: {preview})" if preview else "")
+        if _is_verbose_mode() and tickers:
+            logger.debug("Refresh dry-run full universe tickers: %s", ", ".join(tickers))
         return
     refresh_pipeline(config)
 
@@ -4256,7 +4271,7 @@ def main() -> None:
     register_equity_commands(commands)
 
     args = sys.argv[1:]
-    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news = _parse_cli_overrides(args)
+    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose = _parse_cli_overrides(args)
     if "-h" in args or "--help" in args:
         _print_usage()
         return
@@ -4275,6 +4290,9 @@ def main() -> None:
         os.environ["SPECTRAQUANT_UNIVERSE"] = universe
     if from_news:
         os.environ["SPECTRAQUANT_FROM_NEWS"] = "true"
+    if verbose:
+        os.environ["SPECTRAQUANT_VERBOSE"] = "true"
+        logging.getLogger().setLevel(logging.DEBUG)
 
     if len(args) < 1:
         logger.error(USAGE)

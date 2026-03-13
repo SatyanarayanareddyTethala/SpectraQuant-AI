@@ -218,28 +218,27 @@ sqv3 crypto run --config-dir /path/to/my/config
 A typical research loop using V3:
 
 ```
-1. Ingest prices
+1. Ingest prices / run pipelines
    sqv3 equity run --mode normal
    sqv3 crypto run --mode normal
 
-2. Fetch news intelligence
-   sqv3 research run --news-scan
+2. Build research dataset
+   sqv3 research dataset --asset-class crypto
 
-3. Generate signals
-   sqv3 equity signals
-   sqv3 crypto signals
+3. Inspect strategy registry
+   sqv3 strategy list
+   sqv3 strategy run crypto_momentum_news_hybrid_v1
 
-4. Run hybrid strategies
-   sqv3 strategy run --strategy momentum_news_hybrid
+4. Run and compare experiments (from stored runs)
+   sqv3 experiment list
+   sqv3 experiment compare run_a run_b
 
-5. Run experiments
-   sqv3 experiment run --config config/v3/strategies.yaml
+5. Backtest a registered strategy
+   sqv3 backtest run --asset-class crypto --strategy crypto_momentum_v1
 
-6. Evaluate results
-   sqv3 experiment results --latest
-
-7. Deploy or paper-trade strategy
-   sqv3 strategy portfolio --strategy momentum_news_hybrid
+6. Validate hybrid universe and inspect feature store
+   sqv3 universe validate
+   sqv3 feature-store list
 ```
 
 ---
@@ -283,34 +282,52 @@ spectraquant predict-ml --ticker AAPL --rows 10
 
 ```bash
 sqv3 --help
-
-# Environment and config check
 sqv3 doctor
+sqv3 version
 
-# Equity pipeline
+# Equity pipeline (implemented)
 sqv3 equity run --mode normal      # normal | test | refresh
-sqv3 equity signals
+sqv3 equity download
+sqv3 equity universe               # scaffold-only message
+sqv3 equity signals                # scaffold-only message
 
 # Crypto pipeline
 sqv3 crypto run --mode normal
-sqv3 crypto signals
+sqv3 crypto download --symbols BTC,ETH
+sqv3 crypto universe
+sqv3 crypto signals                # scaffold-only message
 
-# Research (news intelligence + dataset building)
-sqv3 research run
+# Research + strategies
+sqv3 research dataset --asset-class crypto
+sqv3 strategy list
+sqv3 strategy show crypto_momentum_v1
+sqv3 strategy run crypto_momentum_v1
 
-# Strategy and experiments
-sqv3 strategy run --strategy <name>
-sqv3 strategy portfolio --strategy <name>
-sqv3 experiment run
-sqv3 experiment results
-
-# Backtesting
-sqv3 backtest run --strategy <name>
-
-# Feature store
+# Experiments / backtesting / feature store
+sqv3 experiment list
+sqv3 experiment show <experiment_id>
+sqv3 experiment compare <id_1> <id_2>
+sqv3 backtest run --asset-class crypto --strategy crypto_momentum_v1
 sqv3 feature-store list
-sqv3 feature-store build
+sqv3 feature-store query --feature-name crypto_tech_factors
+
+# Other implemented groups
+sqv3 strategy-portfolio list
+sqv3 strategy-portfolio run <portfolio_id>
+sqv3 universe validate
 ```
+
+#### V3 command status
+
+| Group | Implemented now | Scaffold-only | Planned / not yet available |
+|---|---|---|---|
+| `crypto` | `run`, `download`, `universe` | `signals` | - |
+| `equity` | `run`, `download` | `universe`, `signals` | - |
+| `research` | `dataset` | - | `research run` |
+| `strategy` | `list`, `show`, `run` | - | - |
+| `experiment` | `list`, `show`, `compare` | - | `run`, `results` |
+| `feature-store` | `list`, `query` | - | `build` |
+| `strategy-portfolio` | `list`, `run` | - | alias command `strategy portfolio` |
 
 ### V3 Run Modes
 
