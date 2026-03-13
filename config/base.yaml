@@ -7,6 +7,35 @@ mlops:
   walk_forward_splits: 3
   drift_threshold: 0.6
 
+ml:
+  enabled: true
+  model_type: ensemble          # rf | xgb | ensemble
+  horizon: 1                    # forward-return horizon in bars
+  train_size: 252               # rows in each walk-forward training window
+  test_size: 21                 # rows in each walk-forward test window
+  step_size: 21                 # rows to advance between folds
+  threshold: 0.55               # ensemble probability threshold for buy/sell
+  use_xgboost: true             # set false if xgboost is not installed
+  use_sarimax: false            # optional SARIMAX directional signal
+  weights:
+    rf: 0.4                     # Random Forest probability weight
+    xgb: 0.4                    # XGBoost probability weight
+    ts: 0.2                     # SARIMAX directional signal weight
+  feature_columns:
+    - return_1
+    - return_3
+    - return_5
+    - return_10
+    - volatility_5
+    - volatility_10
+    - volume_change
+    - sma_10_ratio
+    - sma_20_ratio
+    - rsi_14
+    - macd
+    - macd_signal
+    - sentiment_score
+
 qa:
   mode: lenient
   max_abs_daily_return: 0.8

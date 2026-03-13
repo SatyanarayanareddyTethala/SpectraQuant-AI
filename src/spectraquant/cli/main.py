@@ -4085,6 +4085,129 @@ def cmd_research_history(*args: Any, **kwargs: Any) -> None:
     print(json.dumps(history, indent=2))
 
 
+def cmd_train_ml(*args: Any, **kwargs: Any) -> None:
+    """Train Random Forest and XGBoost classifiers using walk-forward validation.
+
+    Reads price data from ``data/prices/<TICKER>.parquet`` (or .csv),
+    engineers ML features, creates supervised targets, runs walk-forward
+    validation, and writes signals + evaluation artefacts to ``reports/ml/``.
+
+    Usage::
+
+        spectraquant train-ml --ticker AAPL
+        spectraquant train-ml --ticker AAPL --horizon 5
+    """
+    from spectraquant.ml.pipeline import run_ml_pipeline
+
+    config = kwargs.get("config") or _load_config()
+
+    # Resolve ticker from positional args or kwargs
+    ticker: str | None = kwargs.get("ticker")
+    if not ticker and len(args) > 1:
+        ticker = str(args[1])
+
+    raw_args = list(args)
+    for i, a in enumerate(raw_args):
+        if a in ("--ticker", "-t") and i + 1 < len(raw_args):
+            ticker = raw_args[i + 1]
+            break
+        if str(a).startswith("--ticker="):
+            ticker = str(a).split("=", 1)[1]
+            break
+
+    if not ticker:
+        logger.error("train-ml: --ticker <SYMBOL> is required.  Example: spectraquant train-ml --ticker AAPL")
+        return
+
+    df = _load_price_history(ticker)
+    if df is None or df.empty:
+        logger.error("train-ml: no price data found for %s.  Run 'spectraquant download' first.", ticker)
+        return
+
+    logger.info("train-ml: running ML pipeline for %s (%d rows) …", ticker, len(df))
+    try:
+        result = run_ml_pipeline(df, config=config)
+    except ValueError as exc:
+        logger.error("train-ml: pipeline failed: %s", exc)
+        return
+
+    rf_metrics = [f.metrics for f in result.rf_fold_results]
+    if rf_metrics:
+        import statistics
+        avg_acc = statistics.mean(m.get("accuracy", 0) for m in rf_metrics)
+        avg_f1 = statistics.mean(m.get("f1", 0) for m in rf_metrics)
+        logger.info("train-ml: RF walk-forward avg accuracy=%.4f  avg f1=%.4f  (%d folds)", avg_acc, avg_f1, len(rf_metrics))
+
+    if result.xgb_fold_results:
+        xgb_metrics = [f.metrics for f in result.xgb_fold_results]
+        import statistics
+        avg_acc = statistics.mean(m.get("accuracy", 0) for m in xgb_metrics)
+        avg_f1 = statistics.mean(m.get("f1", 0) for m in xgb_metrics)
+        logger.info("train-ml: XGB walk-forward avg accuracy=%.4f  avg f1=%.4f  (%d folds)", avg_acc, avg_f1, len(xgb_metrics))
+
+    logger.info("train-ml: signals written to %s", result.metadata.get("signals_path", "reports/ml/signals/"))
+    logger.info("train-ml: complete.  metadata=%s", result.metadata)
+
+
+def cmd_predict_ml(*args: Any, **kwargs: Any) -> None:
+    """Generate ML ensemble signals for a single ticker.
+
+    Identical to ``train-ml`` but prints the last N signal rows to stdout
+    in addition to writing the full output.  Suitable for quick validation
+    and pipeline monitoring.
+
+    Usage::
+
+        spectraquant predict-ml --ticker AAPL
+        spectraquant predict-ml --ticker AAPL --rows 10
+    """
+    from spectraquant.ml.pipeline import run_ml_pipeline
+
+    config = kwargs.get("config") or _load_config()
+
+    ticker: str | None = kwargs.get("ticker")
+    n_rows: int = 5
+
+    raw_args = list(args)
+    for i, a in enumerate(raw_args):
+        if a in ("--ticker", "-t") and i + 1 < len(raw_args):
+            ticker = raw_args[i + 1]
+        if a == "--rows" and i + 1 < len(raw_args):
+            try:
+                n_rows = int(raw_args[i + 1])
+            except ValueError:
+                pass
+        if str(a).startswith("--ticker="):
+            ticker = str(a).split("=", 1)[1]
+        if str(a).startswith("--rows="):
+            try:
+                n_rows = int(str(a).split("=", 1)[1])
+            except ValueError:
+                pass
+
+    if not ticker:
+        logger.error("predict-ml: --ticker <SYMBOL> is required.  Example: spectraquant predict-ml --ticker AAPL")
+        return
+
+    df = _load_price_history(ticker)
+    if df is None or df.empty:
+        logger.error("predict-ml: no price data found for %s.  Run 'spectraquant download' first.", ticker)
+        return
+
+    logger.info("predict-ml: running ML pipeline for %s (%d rows) …", ticker, len(df))
+    try:
+        result = run_ml_pipeline(df, config=config)
+    except ValueError as exc:
+        logger.error("predict-ml: pipeline failed: %s", exc)
+        return
+
+    print(f"\nML Signals – {ticker} (last {n_rows} rows)")
+    print(result.signals.tail(n_rows).to_string())
+    print(f"\nSignal distribution:\n{result.signals['signal_score'].value_counts().to_string()}")
+    if not result.rf_importance.empty:
+        print(f"\nTop-5 RF feature importances:\n{result.rf_importance.head(5).to_string(index=False)}")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     commands = {
@@ -4118,6 +4241,8 @@ def main() -> None:
         "research-run": cmd_research_run,
         "research-status": cmd_research_status,
         "research-history": cmd_research_history,
+        "train-ml": cmd_train_ml,
+        "predict-ml": cmd_predict_ml,
     }
 
     from spectraquant.cli.commands.data import register_data_commands
