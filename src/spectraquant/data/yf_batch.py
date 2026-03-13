@@ -92,6 +92,7 @@ def fetch_history_batched(
     total_batches = (len(tickers_list) + batch_size - 1) // batch_size
     total_ok = 0
     total_failed = 0
+    total_rows_written = 0
 
     for batch_idx, start in enumerate(range(0, len(tickers_list), batch_size), start=1):
         batch = tickers_list[start : start + batch_size]
@@ -125,7 +126,9 @@ def fetch_history_batched(
                         break
                     assert_price_frame(df, context=f"post-merge {ticker}")
                     _safe_write_price(ticker, df)
-                    logger.info("Saved %s rows for %s after retention.", len(df), ticker)
+                    rows_written = len(df)
+                    logger.debug("Saved %s rows for %s after retention.", rows_written, ticker)
+                    total_rows_written += rows_written
                     success = True
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -152,10 +155,4 @@ def fetch_history_batched(
             logger.info("Sleeping %s seconds between batches.", sleep_seconds)
             time.sleep(sleep_seconds)
 
-    logger.info(
-        "Download complete: total_ok=%s total_failed=%s total=%s batches=%s",
-        total_ok,
-        total_failed,
-        len(tickers_list),
-        total_batches,
-    )
+    logger.info("Download complete: %s symbols processed (%s rows written)", len(tickers_list), total_rows_written)
