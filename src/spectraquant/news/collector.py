@@ -81,7 +81,7 @@ def collect_newsapi(
         Raw articles with standard keys.
     """
     try:
-        import aiohttp  # noqa: WPS433 — validates install
+        import aiohttp  # noqa: F401,WPS433 — validates install
     except ImportError:
         pass
 

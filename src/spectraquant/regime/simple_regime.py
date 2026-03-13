@@ -17,7 +17,6 @@ def _rolling_percentile(series: pd.Series, window: int = 252) -> pd.Series:
     def _percentile(x: pd.Series) -> float:
         if x.empty:
             return np.nan
-        last = x.iloc[-1]
         return float((x.rank(pct=True).iloc[-1]))
 
     return series.rolling(window, min_periods=20).apply(_percentile, raw=False)

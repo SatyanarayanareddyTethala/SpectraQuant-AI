@@ -52,7 +52,6 @@ class TrendExpert(BaseExpert):
             
             sma_fast = latest["sma_fast"]
             sma_slow = latest["sma_slow"]
-            current_price = latest["close"]
             
             # Calculate signal strength
             spread = (sma_fast - sma_slow) / sma_slow

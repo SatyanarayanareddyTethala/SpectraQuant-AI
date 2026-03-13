@@ -295,7 +295,6 @@ def main() -> None:
                 and command != "release-check"
                 and manifest_config is not None
             ):
-                from spectraquant.core.io import write_portfolio
                 manifest_path = _write_dashboard_manifest(command, manifest_config)
                 from spectraquant.core.diagnostics import record_output
                 record_output(str(manifest_path))

@@ -153,7 +153,6 @@ def propose_policy_update(
 
     # ---- Adjust buy/sell thresholds based on failure rate ---------------
     buy_t = new_policy["thresholds"]["buy"]
-    sell_t = new_policy["thresholds"]["sell"]
 
     if failure_rate > _HIGH_FAILURE_RATE:
         # Too many failures → tighten buy threshold (be more selective)

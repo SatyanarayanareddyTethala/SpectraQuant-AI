@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
