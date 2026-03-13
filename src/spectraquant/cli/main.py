@@ -11,7 +11,6 @@ import tempfile
 import random
 from datetime import datetime, timezone
 from copy import deepcopy
-import shutil
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Tuple
 
@@ -112,7 +111,6 @@ from spectraquant.qa.quality_gates import (
     run_quality_gates_signals,
     write_quality_report,
 )
-from spectraquant.qa.hash_utils import hash_file
 from spectraquant.qa.mode import resolve_gate_mode
 
 from spectraquant.alpha.factors import compute_alpha_factors
@@ -2744,7 +2742,6 @@ def cmd_portfolio(*args: Any, **kwargs: Any) -> None:
             point_in_time_as_of,
         )
 
-    intraday_cfg = config.get("intraday", {}) if isinstance(config, dict) else {}
     explicit_horizon = kwargs.get("horizon")
     horizon = explicit_horizon if explicit_horizon is not None else config.get("portfolio", {}).get("horizon", "1d")
     selected_horizon = str(horizon).strip().lower()
