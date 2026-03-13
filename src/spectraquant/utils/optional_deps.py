@@ -1,6 +1,7 @@
 """Optional dependency management with lazy imports and graceful fallbacks."""
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 
@@ -71,28 +72,28 @@ def check_optional_dependency(name: str) -> tuple[bool, str | None]:
     """
     try:
         if name == "lightgbm":
-            import lightgbm  # noqa: F401
+            import lightgbm
             return True, None
         elif name == "sklearn" or name == "scikit-learn":
-            import sklearn  # noqa: F401
+            import sklearn
             return True, None
         elif name == "scipy":
-            import scipy  # noqa: F401
+            import scipy
             return True, None
         elif name == "numpy":
-            import numpy  # noqa: F401
+            import numpy
             return True, None
         elif name == "pandas":
-            import pandas  # noqa: F401
+            import pandas
             return True, None
         elif name == "yaml":
-            import yaml  # noqa: F401
+            import yaml
             return True, None
         elif name == "transformers":
-            import transformers  # noqa: F401
+            import transformers
             return True, None
         elif name == "torch":
-            import torch  # noqa: F401
+            import torch
             return True, None
         else:
             return False, f"Unknown dependency: {name}"

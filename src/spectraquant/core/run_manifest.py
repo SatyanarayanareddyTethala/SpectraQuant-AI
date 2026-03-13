@@ -39,6 +39,7 @@ def _compute_run_id(config: dict, from_news: bool, as_of_utc: str) -> str:
     produce the same ID, making runs comparable and de-duplicable.
     """
     news_cfg = config.get("news_universe", {}) if isinstance(config, dict) else {}
+    perf_cfg = config.get("perf", {}) if isinstance(config, dict) else {}
 
     canonical = {
         "from_news": from_news,

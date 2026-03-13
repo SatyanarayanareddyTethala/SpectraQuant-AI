@@ -151,6 +151,7 @@ def apply_risk_guardrails(
     
     disable_on_drawdown = guardrails.get("disable_on_drawdown")
     min_calibration = guardrails.get("min_calibration", 0.55)
+    max_turnover = guardrails.get("max_turnover")
     
     # Check drawdown condition
     if disable_on_drawdown is not None:

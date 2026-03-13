@@ -9,7 +9,7 @@ import logging
 import sys
 import tempfile
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 import shutil
 from pathlib import Path
@@ -66,6 +66,7 @@ from spectraquant.core.schema import order_columns, schema_version_for, validate
 from spectraquant.core.time import (
     ensure_datetime_column,
     normalize_time_index,
+    resolve_prediction_date,
     resolve_prediction_date_for_horizon,
 )
 from spectraquant.data.normalize import assert_price_frame, normalize_price_columns, normalize_price_frame
@@ -909,7 +910,7 @@ def _load_lgbm_model(model_path: str | Path) -> Any:
 def _train_gbdt_model(dataset: pd.DataFrame, label_col: str, config: Dict) -> dict:
     from spectraquant.utils.optional_deps import require_lightgbm, require_sklearn
     lgb = require_lightgbm()
-    require_sklearn()
+    sklearn = require_sklearn()
     from sklearn.metrics import mean_squared_error, roc_auc_score
     
     feature_columns = _resolve_feature_columns(dataset, label_col, config)
@@ -2323,6 +2324,7 @@ def cmd_predict(*args: Any, **kwargs: Any) -> None:
     regime = compute_regime(price_data)
     for horizon in horizons:
         horizon_days = _parse_horizon_to_days(horizon)
+        is_intraday = horizon in intraday_horizons
         latest_dates = {
             ticker: resolve_prediction_date_for_horizon(
                 ticker, horizon, price_data, intraday_price_data or None
@@ -2745,6 +2747,7 @@ def cmd_portfolio(*args: Any, **kwargs: Any) -> None:
         )
 
     intraday_cfg = config.get("intraday", {}) if isinstance(config, dict) else {}
+    intraday_enabled = bool(intraday_cfg.get("enabled", False))
     explicit_horizon = kwargs.get("horizon")
     horizon = explicit_horizon if explicit_horizon is not None else config.get("portfolio", {}).get("horizon", "1d")
     selected_horizon = str(horizon).strip().lower()

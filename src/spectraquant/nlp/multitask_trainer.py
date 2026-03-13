@@ -12,6 +12,12 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+)
 
 logger = logging.getLogger(__name__)
 

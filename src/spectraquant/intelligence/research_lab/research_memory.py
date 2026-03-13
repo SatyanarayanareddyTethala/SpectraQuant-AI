@@ -11,9 +11,10 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from spectraquant.intelligence.research_lab.hypothesis_engine import Hypothesis
 from spectraquant.intelligence.research_lab.experiment_runner import ExperimentResult

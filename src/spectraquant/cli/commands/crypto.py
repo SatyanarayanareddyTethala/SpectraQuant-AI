@@ -186,7 +186,8 @@ def cmd_crypto_ingest_dataset(cfg: dict[str, Any]) -> None:
     """
     import logging
     import sys
-    from datetime import datetime
+    from datetime import datetime, timezone
+    from pathlib import Path
 
     logger = logging.getLogger(__name__)
 

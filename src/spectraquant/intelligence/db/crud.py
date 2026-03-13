@@ -1,9 +1,10 @@
 """CRUD operations for all Intelligence database models."""
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 

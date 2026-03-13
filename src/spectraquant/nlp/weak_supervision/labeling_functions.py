@@ -6,6 +6,7 @@ in financial news: buybacks, lawsuits, guidance changes, and merger rumors.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 
 class LabelingFunction:

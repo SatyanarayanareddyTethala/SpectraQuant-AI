@@ -16,8 +16,9 @@ Computes
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, List
+import math
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 
 from spectraquant.intelligence.research_lab.experiment_runner import ExperimentResult
 
