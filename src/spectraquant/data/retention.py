@@ -199,7 +199,7 @@ def _prune_frame(
 
 def _log_prune(meta: dict, label: str) -> None:
     removed = meta["rows_before"] - meta["rows_after"]
-    logger.info(
+    logger.debug(
         "Retention (%s): kept=%s removed=%s cutoff=%s before=%s->%s after=%s->%s",
         label,
         meta["rows_after"],
