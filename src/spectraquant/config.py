@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import warnings
 from importlib import metadata
 from pathlib import Path
@@ -13,6 +14,9 @@ import yaml
 from spectraquant.universe import parse_universe_override, resolve_universe
 
 logger = logging.getLogger(__name__)
+
+_INIT_LOG_LOCK = threading.Lock()
+_INIT_LOGGED_KEYS: set[str] = set()
 
 CONFIG_PATH = Path(os.getenv("SPECTRAQUANT_CONFIG", "config.yaml"))
 
@@ -374,11 +378,21 @@ def validate_runtime_defaults(cfg: dict) -> None:
 
     markets = sorted({"UK" if t.endswith(".L") else "India" for t in tickers_upper})
     verbose = os.getenv("SPECTRAQUANT_VERBOSE", "").strip().lower() in {"1", "true", "yes", "on"}
-    logger.info("Active universe loaded: %s symbols", len(tickers_upper))
+    _log_init_once("active_universe", "Active universe loaded: %s symbols", len(tickers_upper))
     if verbose and tickers_upper:
         logger.debug("Active universe tickers: %s", ", ".join(tickers_upper))
-    logger.info("Synthetic mode enabled: %s", synthetic_flag)
-    logger.info("Markets detected: %s", "/".join(markets))
+    _log_init_once("synthetic_mode", "Synthetic mode enabled: %s", synthetic_flag)
+    _log_init_once("markets_detected", "Markets detected: %s", "/".join(markets))
+
+
+def _log_init_once(key: str, msg: str, *args: object) -> None:
+    """Emit a process-level initialization log line once per key."""
+
+    with _INIT_LOG_LOCK:
+        if key in _INIT_LOGGED_KEYS:
+            return
+        _INIT_LOGGED_KEYS.add(key)
+    logger.info(msg, *args)
 
 
 def get_config() -> Dict[str, Any]:

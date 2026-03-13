@@ -135,11 +135,9 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
 
 def _load_config() -> dict:
     """Load configuration from config.yaml."""
-    from spectraquant.config import get_config, validate_runtime_defaults
+    from spectraquant.config import get_config
     
-    config = get_config()
-    validate_runtime_defaults(config)
-    return config
+    return get_config()
 
 
 def _write_dashboard_manifest(command: str, config: dict) -> Path:
