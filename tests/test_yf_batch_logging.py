@@ -56,7 +56,7 @@ def test_batch_saved_rows_log_suppressed_at_info_and_summary_present(monkeypatch
 
     assert "Saved 3 rows for AAA after retention." not in caplog.text
     assert "Saved 3 rows for BBB after retention." not in caplog.text
-    assert "Download complete: 2 symbols processed (6 rows written)" in caplog.text
+    assert "Download complete: 2 symbols processed (2 ok, 0 failed, 6 rows written)" in caplog.text
 
 
 def test_batch_saved_rows_log_emitted_at_debug(monkeypatch, caplog):
