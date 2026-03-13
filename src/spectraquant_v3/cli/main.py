@@ -123,12 +123,23 @@ def doctor_cmd(
         except ImportError:
             typer.echo(f"  ✗ {pkg} (required)  [NOT INSTALLED]", err=True)
             ok = False
+
+    typer.echo("\n  Optional dependency guidance:")
+    typer.echo("  - ccxt is optional and only required for crypto exchange connectivity (live/download flows).")
+    typer.echo("  - yfinance is optional and only required for equity market-data download flows.")
+    typer.echo("  - Install optional sets with: pip install -e '.[crypto]' or pip install -e '.[all]'")
+
     for module, pkg in optional_packages:
         try:
             importlib.import_module(module)
             typer.echo(f"  ✓ {pkg} (optional)")
         except ImportError:
-            typer.echo(f"  - {pkg} (optional)  [not installed]")
+            if pkg == "ccxt":
+                typer.echo("  - ccxt (optional)  [not installed]  -> crypto download/live commands may be unavailable")
+                typer.echo("    install with: pip install -e '.[crypto]'")
+            else:
+                typer.echo("  - yfinance (optional)  [not installed]  -> equity download commands may be unavailable")
+                typer.echo("    install with: pip install yfinance")
 
     typer.echo("")
     if ok:

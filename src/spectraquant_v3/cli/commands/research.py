@@ -10,7 +10,7 @@ import typer
 
 research_app = typer.Typer(
     name="research",
-    help="Research dataset building commands.",
+    help="Research dataset building commands. Note: 'research run' is not implemented; use 'research dataset'.",
     no_args_is_help=True,
 )
 
