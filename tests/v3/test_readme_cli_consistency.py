@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-README_PATH = Path("README.md")
+README_PATH = Path(__file__).resolve().parents[2] / "README.md"
 
 
 def test_readme_does_not_document_removed_v3_examples():

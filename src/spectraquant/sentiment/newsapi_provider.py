@@ -19,6 +19,7 @@ _RUN_QUERIED: set[str] = set()
 _LAST_REQUEST_AT = 0.0
 _MIN_REQUEST_INTERVAL = 1.1
 _WARNED_MISSING_KEY = False
+_PLACEHOLDER_API_KEYS = {"", "YOUR_KEY", "YOUR_KEY_HERE", "YOUR_NEWSAPI_KEY", "YOUR_NEWSAPI_KEY_HERE"}
 
 
 def _load_dotenv() -> None:
@@ -31,7 +32,13 @@ def _load_dotenv() -> None:
 
 def _get_api_key() -> str | None:
     _load_dotenv()
-    return os.getenv("NEWSAPI_KEY")
+    value = os.getenv("NEWSAPI_KEY")
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if cleaned.upper() in _PLACEHOLDER_API_KEYS:
+        return None
+    return cleaned
 
 
 def _throttle() -> None:
@@ -65,10 +72,6 @@ def fetch_news_items(ticker: str, start_date: str, end_date: str, config: dict) 
     sentiment_cfg = config.get("sentiment") or {}
     max_articles = int(sentiment_cfg.get("max_articles_per_ticker", 50) or 50)
     query = _resolve_query(ticker, config)
-    cache_key = (query, start_date, end_date, max_articles)
-    if cache_key in _RUN_CACHE:
-        return list(_RUN_CACHE[cache_key])
-
     api_key = _get_api_key()
     if not api_key:
         if sentiment_cfg.get("enabled", False) and sentiment_cfg.get("use_news", True):
@@ -81,6 +84,10 @@ def fetch_news_items(ticker: str, start_date: str, end_date: str, config: dict) 
             logger.warning("NEWSAPI_KEY missing; disabling NewsAPI sentiment fetch.")
             _WARNED_MISSING_KEY = True
         return []
+
+    cache_key = (query, start_date, end_date, max_articles)
+    if cache_key in _RUN_CACHE:
+        return list(_RUN_CACHE[cache_key])
 
     if ticker in _RUN_QUERIED:
         logger.info("Skipping additional NewsAPI query for %s in this run.", ticker)
