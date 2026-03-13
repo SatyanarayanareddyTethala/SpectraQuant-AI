@@ -151,14 +151,14 @@ def get_canonical_price_column(df: pd.DataFrame, cfg: Dict) -> tuple[str, pd.Ser
             if candidate in col_map:
                 col = col_map[candidate]
                 series = pd.to_numeric(df[col], errors="coerce")
-                logger.info("Using adjusted close (%s) for QA return calculations", col)
+                logger.debug("Using adjusted close (%s) for QA return calculations", col)
                 return col, series
         
         # Fall back to close
         if "close" in col_map:
             col = col_map["close"]
             series = pd.to_numeric(df[col], errors="coerce")
-            logger.info("Using raw close for QA return calculations (adj_close not available)")
+            logger.debug("Using raw close for QA return calculations (adj_close not available)")
             return col, series
         
         raise ValueError("No suitable price column (close or adj_close) found in dataframe")
