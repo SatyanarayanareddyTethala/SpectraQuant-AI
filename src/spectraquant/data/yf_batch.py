@@ -155,4 +155,10 @@ def fetch_history_batched(
             logger.info("Sleeping %s seconds between batches.", sleep_seconds)
             time.sleep(sleep_seconds)
 
-    logger.info("Download complete: %s symbols processed (%s rows written)", len(tickers_list), total_rows_written)
+    logger.info(
+        "Download complete: %s symbols processed (%s ok, %s failed, %s rows written)",
+        len(tickers_list),
+        total_ok,
+        total_failed,
+        total_rows_written,
+    )
