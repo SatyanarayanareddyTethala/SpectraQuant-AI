@@ -9,6 +9,7 @@ import logging
 import sys
 import tempfile
 import random
+import time
 from datetime import datetime, timezone
 from copy import deepcopy
 from pathlib import Path
@@ -68,7 +69,6 @@ from spectraquant.core.time import (
     resolve_prediction_date_for_horizon,
 )
 from spectraquant.data.normalize import assert_price_frame, normalize_price_columns, normalize_price_frame
-from spectraquant.data.sentiment import SENTIMENT_COLUMNS, get_sentiment_features, prefetch_sentiment_cache
 from spectraquant.data.retention import (
     is_post_training,
     mark_training_complete,
@@ -169,7 +169,7 @@ DEFAULT_PRED_THRESHOLD_BUY = 60.0
 DEFAULT_PRED_THRESHOLD_SELL = 40.0
 DEFAULT_LABEL_HORIZON_DAYS = 5
 REQUIRED_FEATURE_COLUMNS = ("Close", "ret_1d", "ret_5d", "sma_5", "vol_5", "rsi_14")
-SENTIMENT_FEATURE_COLUMNS = tuple(SENTIMENT_COLUMNS)
+SENTIMENT_FEATURE_COLUMNS = ("news_sentiment_avg", "news_sentiment_std", "news_count", "social_sentiment_avg", "social_sentiment_std", "social_count")
 USAGE = (
     "Usage: python -m src.spectraquant.cli.main "
     "[download|news-scan|features|build-dataset|train|predict|signals|score|portfolio|execute|eval|retrain|refresh|doctor|health-check|"
@@ -177,7 +177,7 @@ USAGE = (
     "explain-portfolio|compare-runs|research-run|research-status|research-history|"
     "crypto-run|crypto-stream|onchain-scan|agents-run|allocate|crypto-ingest-dataset|"
     "equity-run|equity-download|equity-universe|equity-signals] [--research] [--use-sentiment] [--test-mode] "
-    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"] [--verbose]"
+    "[--force-pass-tests] [--dry-run] [--universe \"nifty50,ftse100\"] [--verbose] [--no-sentiment]"
 )
 
 
@@ -185,6 +185,19 @@ def _is_verbose_mode() -> bool:
     value = os.getenv("SPECTRAQUANT_VERBOSE", "").strip().lower()
     return value in {"1", "true", "yes", "on"} or logger.isEnabledFor(logging.DEBUG)
 
+
+
+
+def _sentiment_functions() -> tuple[Any, Any]:
+    """Lazy-load sentiment functions so no provider module is imported when disabled."""
+
+    from spectraquant.data.sentiment import get_sentiment_features, prefetch_sentiment_cache
+
+    return get_sentiment_features, prefetch_sentiment_cache
+
+
+def _sentiment_enabled(config: Dict) -> bool:
+    return bool((config.get("sentiment") or {}).get("enabled", False))
 
 def _exchange_from_ticker(ticker: str) -> str:
     if ticker.upper().endswith(".NS"):
@@ -477,8 +490,9 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     if not price_data:
         raise FileNotFoundError("No price data available to build dataset.")
 
-    use_sentiment = bool(config.get("sentiment", {}).get("enabled", False))
+    use_sentiment = _sentiment_enabled(config)
     if use_sentiment:
+        get_sentiment_features, prefetch_sentiment_cache = _sentiment_functions()
         all_dates: list[pd.Timestamp] = []
         for _df in price_data.values():
             idx = _df.index if isinstance(_df.index, pd.DatetimeIndex) else pd.to_datetime(_df.get("date"), utc=True, errors="coerce")
@@ -490,12 +504,21 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     min_eligible_tickers = int(qa_cfg.get("min_eligible_tickers", 10))
     eligibility_floor = MIN_ELIGIBILITY_FLOOR
     initial_ticker_count = len(tickers)
+    stage_start = time.perf_counter()
     panel_cfg = config.get("dataset", {}) if isinstance(config, dict) else {}
     if bool(panel_cfg.get("use_panel_builder", True)):
         panel_dataset = build_price_feature_panel(price_data)
         if not panel_dataset.empty and not use_sentiment:
             dataset = panel_dataset.dropna().reset_index(drop=True)
             run_quality_gates_dataset(dataset, config)
+            elapsed = time.perf_counter() - stage_start
+            logger.info(
+                "Dataset assembly summary: rows=%s symbols=%s elapsed=%.2fs sentiment=%s builder=panel",
+                len(dataset),
+                dataset["ticker"].nunique() if "ticker" in dataset.columns else 0,
+                elapsed,
+                use_sentiment,
+            )
             PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
             register_default_factors()
             factor_metadata = get_factor_metadata()
@@ -702,6 +725,13 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
     dataset = pd.concat(records, ignore_index=True)
     dataset = dataset.sort_values("date")
     run_quality_gates_dataset(dataset, config)
+    logger.info(
+        "Dataset assembly summary: rows=%s symbols=%s elapsed=%.2fs sentiment=%s builder=loop",
+        len(dataset),
+        dataset["ticker"].nunique() if "ticker" in dataset.columns else 0,
+        time.perf_counter() - stage_start,
+        use_sentiment,
+    )
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     register_default_factors()
@@ -1296,19 +1326,25 @@ def _generate_signals_from_predictions(pred_df: pd.DataFrame, config: Dict) -> p
     return pred_df[[col for col in pred_df.columns if col in {"ticker", "date", "score", "signal", "rank", "horizon", "regime"}]]
 
 
+_CONFIG_CACHE: Dict[str, Any] | None = None
+
+
 def _load_config() -> Dict:
-    cfg = get_config()
-    if CONFIG_PATH.exists():
-        record_input(str(CONFIG_PATH))
-    logger.info("Configuration loaded with sections: %s", ", ".join(sorted(cfg.keys())))
-    return cfg
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is None:
+        cfg = get_config()
+        if CONFIG_PATH.exists():
+            record_input(str(CONFIG_PATH))
+        logger.info("Configuration loaded with sections: %s", ", ".join(sorted(cfg.keys())))
+        _CONFIG_CACHE = deepcopy(cfg)
+    return deepcopy(_CONFIG_CACHE)
 
 
 def _print_usage() -> None:
     print(USAGE)
 
 
-def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool, bool]:
+def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, bool, str | None, bool, bool, bool]:
     cleaned: list[str] = []
     use_sentiment = False
     test_mode = False
@@ -1317,6 +1353,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
     universe = None
     from_news = False
     verbose = False
+    no_sentiment = False
     it = iter(args)
     for arg in it:
         if arg == "--use-sentiment":
@@ -1337,6 +1374,9 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
         if arg == "--verbose":
             verbose = True
             continue
+        if arg == "--no-sentiment":
+            no_sentiment = True
+            continue
         if arg.startswith("--universe"):
             value = None
             if arg == "--universe":
@@ -1347,7 +1387,7 @@ def _parse_cli_overrides(args: list[str]) -> tuple[list[str], bool, bool, bool, 
                 universe = value
             continue
         cleaned.append(arg)
-    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose
+    return cleaned, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose, no_sentiment
 
 
 def _is_research_mode() -> bool:
@@ -1957,7 +1997,7 @@ def cmd_download(*args: Any, **kwargs: Any) -> None:
         for ticker in progress_iter(tickers, f"Downloading intraday ({interval})", enabled=show_progress):
             intraday_path = INTRADAY_PRICES_DIR / f"{ticker}_{interval}.csv"
             if intraday_path.exists():
-                logger.info("Using cached intraday data for %s from %s", ticker, intraday_path)
+                logger.debug("Using cached intraday data for %s from %s", ticker, intraday_path)
                 continue
             try:
                 intraday_df = _download_intraday_price(
@@ -2053,6 +2093,8 @@ def cmd_features(*args: Any, **kwargs: Any) -> None:
     features_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     show_progress = not _is_verbose_mode() and len(price_data) > 1
+    stage_start = time.perf_counter()
+    written = 0
     for ticker, df in progress_iter(price_data.items(), "Building features", enabled=show_progress):
         if df.empty:
             continue
@@ -2069,7 +2111,8 @@ def cmd_features(*args: Any, **kwargs: Any) -> None:
         path = features_dir / f"features_{ticker}_{timestamp}.csv"
         feature_df.to_csv(path, index=False)
         record_output(str(path))
-    logger.info("Feature computation completed for %s tickers.", len(price_data))
+        written += 1
+    logger.info("Feature computation completed: symbols=%s artifacts=%s elapsed=%.2fs", len(price_data), written, time.perf_counter() - stage_start)
 
 
 def cmd_build_dataset(*args: Any, **kwargs: Any) -> None:
@@ -4313,7 +4356,7 @@ def main() -> None:
     register_equity_commands(commands)
 
     args = sys.argv[1:]
-    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose = _parse_cli_overrides(args)
+    args, use_sentiment, test_mode, force_pass_tests, dry_run, universe, from_news, verbose, no_sentiment = _parse_cli_overrides(args)
     if "-h" in args or "--help" in args:
         _print_usage()
         return
@@ -4322,6 +4365,8 @@ def main() -> None:
         args = [arg for arg in args if arg != "--research"]
     if use_sentiment:
         os.environ["SPECTRAQUANT_USE_SENTIMENT"] = "true"
+    if no_sentiment:
+        os.environ["SPECTRAQUANT_USE_SENTIMENT"] = "false"
     if test_mode:
         os.environ["SPECTRAQUANT_TEST_MODE"] = "true"
     if force_pass_tests:
