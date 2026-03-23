@@ -213,7 +213,50 @@ sqv3 crypto run --config-dir /path/to/my/config
 
 ---
 
-## 6. Example Workflow
+## 6. Recommended NSE-First Workflow
+
+For production research on Indian equities, prefer the V3 equity path with
+canonical NSE symbols and an explicit universe source.
+
+### Recommended config
+
+Use one of these two inputs under `config/v3/equities.yaml`:
+
+```yaml
+equities:
+  universe:
+    tickers:
+      - INFY.NS
+      - TCS.NS
+      - RELIANCE.NS
+```
+
+or, for larger NSE universes, point to an NSE CSV and let V3 canonicalize
+bare `SYMBOL` values to `.NS` tickers deterministically:
+
+```yaml
+equities:
+  universe:
+    tickers_file: data/universe/EQUITY_L.csv
+```
+
+### Happy-path commands
+
+```bash
+# Inspect the resolved canonical NSE universe
+sqv3 equity universe
+
+# Download/cache OHLCV deterministically for the resolved NSE universe
+sqv3 equity download --mode refresh
+
+# Run the equity pipeline
+sqv3 equity run --mode normal
+```
+
+Each V3 run emits a manifest, QA matrix, and diagnostics/report artefacts under
+`reports/<asset_class>/<run_id>/`.
+
+## 7. Example Workflow
 
 A typical research loop using V3:
 
@@ -243,7 +286,7 @@ A typical research loop using V3:
 
 ---
 
-## 7. CLI Commands
+## 8. CLI Commands
 
 ### V2 (`spectraquant`)
 
@@ -339,7 +382,7 @@ sqv3 universe validate
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 ```bash
 # Compile check
@@ -369,7 +412,7 @@ CI runs on every push via `.github/workflows/tests.yml`.
 
 ---
 
-## 9. Current Research Areas
+## 10. Current Research Areas
 
 - **News-driven strategies** — using event catalysts to time and size positions
   in equities and crypto
@@ -382,7 +425,7 @@ CI runs on every push via `.github/workflows/tests.yml`.
 
 ---
 
-## 10. Roadmap
+## 11. Roadmap
 
 - News-first routing integrated into live strategy runner
 - Improved catalyst scoring with structured ontology
@@ -394,7 +437,7 @@ See [CHANGELOG.md](CHANGELOG.md) for completed work.
 
 ---
 
-## 11. ML Predictive Analytics Module
+## 12. ML Predictive Analytics Module
 
 ### Overview
 
@@ -488,7 +531,7 @@ convention so ML signals can be merged with rule-based signals via
 
 ---
 
-## 12. Documentation
+## 13. Documentation
 
 | Location | Contents |
 |---|---|
@@ -501,7 +544,7 @@ convention so ML signals can be merged with rule-based signals via
 
 ---
 
-## 13. Contributing
+## 14. Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding guidelines, PR checklist,
 and V3 development conventions.

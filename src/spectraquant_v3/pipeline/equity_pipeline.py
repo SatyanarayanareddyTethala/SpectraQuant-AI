@@ -116,8 +116,9 @@ def run_equity_pipeline(
         if price_data:
             ctx.qa_matrix.assert_ohlcv_available()
 
+        qa_path: str | None = None
         if not dry_run:
-            ctx.write_qa_matrix()
+            qa_path = str(ctx.write_qa_matrix())
 
         ctx.mark_stage_ok(RunStage.INGESTION.value)
 
@@ -224,6 +225,8 @@ def run_equity_pipeline(
                 allocations=allocations,
             )
             artefact_paths = {k: str(v) for k, v in written.items()}
+            if qa_path is not None:
+                artefact_paths["qa_matrix"] = qa_path
 
         ctx.mark_stage_ok(RunStage.REPORTING.value)
         ctx.manifest.mark_complete(RunStatus.SUCCESS)
@@ -237,4 +240,3 @@ def run_equity_pipeline(
             "allocations": allocations,
             "artefact_paths": artefact_paths,
         }
-

@@ -105,7 +105,13 @@ class RunContext:
         resolved_run_id = run_id or str(uuid.uuid4())[:8]
         resolved_config = config or {}
 
-        project = ProjectPaths(root=project_root)
+        run_cfg = resolved_config.get("run", {})
+        cache_cfg = resolved_config.get("cache", {})
+        project = ProjectPaths(
+            root=project_root,
+            cache_root=cache_cfg.get("root"),
+            reports_root=run_cfg.get("reports_root"),
+        )
         run_paths = RunPaths.from_project(
             project=project,
             run_id=resolved_run_id,

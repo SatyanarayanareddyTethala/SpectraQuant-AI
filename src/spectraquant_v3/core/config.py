@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-_CONFIG_CACHE: dict[str, Any] | None = None
+_CONFIG_CACHE: dict[str, dict[str, Any]] = {}
 
 # Anchor: walk up from this file's directory to find a config/v3 sibling.
 # This avoids fragile hard-coded `.parent` chains.
@@ -63,11 +63,10 @@ def load_config(
     Raises:
         FileNotFoundError: If ``base.yaml`` cannot be found.
     """
-    global _CONFIG_CACHE
-    if _CONFIG_CACHE is not None and not force_reload:
-        return _CONFIG_CACHE
-
     base_dir = Path(config_dir) if config_dir else _find_config_dir()
+    cache_key = str(base_dir.resolve())
+    if cache_key in _CONFIG_CACHE and not force_reload:
+        return _CONFIG_CACHE[cache_key]
     base_path = base_dir / "base.yaml"
 
     if not base_path.exists():
@@ -79,7 +78,7 @@ def load_config(
     with open(base_path) as fh:
         cfg: dict[str, Any] = yaml.safe_load(fh) or {}
 
-    _CONFIG_CACHE = cfg
+    _CONFIG_CACHE[cache_key] = cfg
     return cfg
 
 
@@ -87,7 +86,11 @@ def get_crypto_config(config_dir: str | Path | None = None) -> dict[str, Any]:
     """Return merged config with crypto.yaml layered on top of base.yaml."""
     base = load_config(config_dir)
     base_dir = Path(config_dir) if config_dir else _find_config_dir()
-    cfg = dict(base)
+    cfg = _merge_optional_overlays(
+        dict(base),
+        base_dir,
+        ("providers.yaml", "news.yaml", "risk.yaml"),
+    )
     crypto_path = base_dir / "crypto.yaml"
     if crypto_path.exists():
         with open(crypto_path) as fh:
@@ -106,7 +109,11 @@ def get_equity_config(config_dir: str | Path | None = None) -> dict[str, Any]:
     """Return merged config with equities.yaml layered on top of base.yaml."""
     base = load_config(config_dir)
     base_dir = Path(config_dir) if config_dir else _find_config_dir()
-    cfg = dict(base)
+    cfg = _merge_optional_overlays(
+        dict(base),
+        base_dir,
+        ("providers.yaml", "news.yaml", "risk.yaml"),
+    )
     equity_path = base_dir / "equities.yaml"
     if equity_path.exists():
         with open(equity_path) as fh:
@@ -123,8 +130,7 @@ def get_equity_config(config_dir: str | Path | None = None) -> dict[str, Any]:
 
 def reset_config_cache() -> None:
     """Reset module-level config cache.  Intended for use in tests only."""
-    global _CONFIG_CACHE
-    _CONFIG_CACHE = None
+    _CONFIG_CACHE.clear()
 
 
 def get_run_mode() -> "RunMode":
@@ -280,3 +286,20 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
         else:
             result[key] = value
     return result
+
+
+def _merge_optional_overlays(
+    cfg: dict[str, Any],
+    base_dir: Path,
+    filenames: tuple[str, ...],
+) -> dict[str, Any]:
+    """Layer optional shared overlays onto *cfg* in a deterministic order."""
+    merged = dict(cfg)
+    for filename in filenames:
+        overlay_path = base_dir / filename
+        if not overlay_path.exists():
+            continue
+        with open(overlay_path) as fh:
+            overlay: dict[str, Any] = yaml.safe_load(fh) or {}
+        merged = _deep_merge(merged, overlay)
+    return merged

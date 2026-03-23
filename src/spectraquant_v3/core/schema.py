@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from spectraquant_v3.core.enums import AssetClass, NoSignalReason, SignalStatus  # noqa: F401
+from spectraquant_v3.core.time import normalize_datetime_frame
 
 _schema_logger = logging.getLogger(__name__)
 
@@ -242,3 +243,6 @@ def validate_ohlcv_dataframe(
             f"OHLCV DataFrame{label} is missing required columns: {sorted(missing)}. "
             f"Present columns: {sorted(actual_cols)}."
         )
+
+    if "timestamp" in actual_cols or isinstance(df.index, pd.DatetimeIndex):
+        normalize_datetime_frame(df, label=f"OHLCV DataFrame{label}")

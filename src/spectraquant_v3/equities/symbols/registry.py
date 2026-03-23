@@ -12,11 +12,18 @@ Design rules:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from spectraquant_v3.core.enums import AssetClass
-from spectraquant_v3.core.errors import AssetClassLeakError, SymbolResolutionError
+from spectraquant_v3.core.errors import (
+    AssetClassLeakError,
+    ConfigValidationError,
+    EmptyUniverseError,
+    SymbolResolutionError,
+)
 from spectraquant_v3.core.schema import SymbolRecord
+from spectraquant.universe.loader import load_nse_universe
 
 # ---------------------------------------------------------------------------
 # Crypto-pattern heuristic used for leak detection
@@ -140,7 +147,7 @@ def build_registry_from_config(cfg: dict[str, Any]) -> EquitySymbolRegistry:
     """
     registry = EquitySymbolRegistry()
     universe_cfg: dict[str, Any] = cfg.get("equities", {}).get("universe", {})
-    tickers: list[str] = universe_cfg.get("tickers", [])
+    tickers = resolve_equity_tickers_from_config(cfg)
     provider: str = cfg.get("equities", {}).get("primary_ohlcv_provider", "yfinance")
 
     for ticker in tickers:
@@ -157,3 +164,57 @@ def build_registry_from_config(cfg: dict[str, Any]) -> EquitySymbolRegistry:
         registry.register(record)
 
     return registry
+
+
+def resolve_equity_tickers_from_config(cfg: dict[str, Any]) -> list[str]:
+    """Resolve canonical equity tickers from config with NSE-first semantics.
+
+    Resolution order:
+    1. ``equities.universe.tickers`` if present.
+    2. ``equities.universe.tickers_file`` using the stable V2 NSE loader.
+
+    Bare NSE symbols are normalized to ``.NS`` suffixed canonical tickers.
+    """
+    universe_cfg: dict[str, Any] = cfg.get("equities", {}).get("universe", {})
+
+    configured = universe_cfg.get("tickers", [])
+    if configured:
+        return _canonicalize_equity_tickers(configured)
+
+    tickers_file = str(universe_cfg.get("tickers_file", "")).strip()
+    if tickers_file:
+        path = Path(tickers_file)
+        suffix = str(universe_cfg.get("default_suffix", ".NS"))
+        tickers, meta, diagnostics = load_nse_universe(path, suffix=suffix)
+        if diagnostics:
+            details = "; ".join(f"{diag.code}: {diag.message}" for diag in diagnostics)
+            raise ConfigValidationError(
+                f"Failed to resolve equity universe from tickers_file={path}: {details}"
+            )
+        if not tickers:
+            raise EmptyUniverseError(
+                f"Equity universe file '{path}' produced zero canonical tickers. meta={meta}"
+            )
+        return tickers
+
+    return []
+
+
+def _canonicalize_equity_tickers(tickers: list[str]) -> list[str]:
+    """Normalize configured equity tickers and enforce deterministic ordering."""
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in tickers:
+        symbol = str(raw).strip().upper()
+        if not symbol:
+            continue
+        if _is_crypto_symbol(symbol):
+            raise AssetClassLeakError(
+                f"Symbol '{symbol}' looks like a crypto pair. Refuse to treat it as equity."
+            )
+        if "." not in symbol:
+            symbol = f"{symbol}.NS"
+        if symbol not in seen:
+            cleaned.append(symbol)
+            seen.add(symbol)
+    return cleaned

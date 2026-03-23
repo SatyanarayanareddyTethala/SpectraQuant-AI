@@ -1144,7 +1144,8 @@ class TestPipelineReporter:
             decisions=self._make_decisions(),
             allocations=self._make_allocations(),
         )
-        assert len(paths) == 4
+        assert len(paths) == 5
+        assert "diagnostics_summary" in paths
         for key, p in paths.items():
             assert Path(p).exists(), f"{key} file not written"
 
@@ -1206,6 +1207,8 @@ class TestCryptoPipelineEndToEnd:
         assert result["status"] == "success"
         # At least the run report should be written
         assert len(result["artefact_paths"]) >= 1
+        assert "qa_matrix" in result["artefact_paths"]
+        assert "diagnostics_summary" in result["artefact_paths"]
 
     def test_pipeline_run_id_propagates(self, tmp_path: Path) -> None:
         from spectraquant_v3.core.enums import RunMode

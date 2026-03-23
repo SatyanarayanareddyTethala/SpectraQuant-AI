@@ -1153,6 +1153,21 @@ class TestYFinanceProvider:
         # Columns should be lower-case
         for col in ["open", "high", "low", "close", "volume"]:
             assert col in result.columns or col in [c.lower() for c in result.columns]
+        assert "timestamp" in result.columns
+        assert str(result["timestamp"].dt.tz) == "UTC"
+        assert result["timestamp"].is_monotonic_increasing
+
+    def test_download_ohlcv_normalizes_timestamp_timezone(self):
+        from spectraquant_v3.equities.ingestion.providers.yfinance_provider import YFinanceProvider
+
+        raw_df = self._sample_yf_df(5)
+        raw_df.index = pd.to_datetime(raw_df.index).tz_localize("Asia/Kolkata")
+        yf = self._mock_yf(df=raw_df)
+        provider = YFinanceProvider(_yf_module=yf)
+
+        result = provider.download_ohlcv("INFY.NS", period="1y", interval="1d")
+        assert "timestamp" in result.columns
+        assert str(result["timestamp"].dt.tz) == "UTC"
 
     def test_download_ohlcv_empty_raises(self):
         from spectraquant_v3.equities.ingestion.providers.yfinance_provider import YFinanceProvider

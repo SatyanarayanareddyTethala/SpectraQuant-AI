@@ -137,6 +137,44 @@ class PipelineReporter:
         path.write_text(json.dumps(payload, indent=2))
         return path
 
+    def write_diagnostics_summary(
+        self,
+        universe_symbols: list[str],
+        signals: list[SignalRow],
+        decisions: list[PolicyDecision],
+        allocations: list[AllocationRow],
+        extra: dict[str, Any] | None = None,
+    ) -> Path:
+        """Write a compact diagnostics summary for operators and CI checks."""
+        path = self.output_dir / f"diagnostics_summary_{self.run_id}.json"
+        active = [r for r in allocations if not r.blocked]
+        blocked = [r for r in allocations if r.blocked]
+        payload: dict[str, Any] = {
+            "run_id": self.run_id,
+            "asset_class": self.asset_class,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "universe_size": len(universe_symbols),
+            "signal_status_counts": {
+                "OK": sum(1 for s in signals if s.status == "OK"),
+                "NO_SIGNAL": sum(1 for s in signals if s.status == "NO_SIGNAL"),
+                "ERROR": sum(1 for s in signals if s.status == "ERROR"),
+            },
+            "policy_counts": {
+                "passed": sum(1 for d in decisions if d.passed),
+                "blocked": sum(1 for d in decisions if not d.passed),
+            },
+            "allocation_counts": {
+                "active": len(active),
+                "blocked": len(blocked),
+            },
+            "total_active_weight": round(sum(r.target_weight for r in active), 6),
+            "blocked_symbols": [r.canonical_symbol for r in blocked],
+        }
+        if extra:
+            payload.update(extra)
+        path.write_text(json.dumps(payload, indent=2))
+        return path
+
     # ------------------------------------------------------------------
     # Convenience: write all artefacts at once
     # ------------------------------------------------------------------
@@ -160,6 +198,13 @@ class PipelineReporter:
             "allocation": self.write_allocation(allocations),
             "run_report": self.write_run_report(
                 universe_size=len(universe_symbols),
+                signals=signals,
+                decisions=decisions,
+                allocations=allocations,
+                extra=extra,
+            ),
+            "diagnostics_summary": self.write_diagnostics_summary(
+                universe_symbols=universe_symbols,
                 signals=signals,
                 decisions=decisions,
                 allocations=allocations,
