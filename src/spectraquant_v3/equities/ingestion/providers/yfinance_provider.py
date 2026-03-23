@@ -16,6 +16,7 @@ from typing import Any
 import pandas as pd
 
 from spectraquant_v3.core.errors import DataSchemaError, EmptyPriceDataError
+from spectraquant_v3.core.time import normalize_datetime_frame
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +116,16 @@ class YFinanceProvider:
         # rename it to the canonical 'timestamp' name.
         df = df.reset_index()
         # yfinance may name the index 'Date' or 'Datetime' depending on interval.
-        for candidate in ("Date", "Datetime", "date", "datetime"):
+        for candidate in ("Date", "Datetime", "date", "datetime", "index"):
             if candidate in df.columns:
                 df = df.rename(columns={candidate: "timestamp"})
                 break
+
+        df = normalize_datetime_frame(
+            df,
+            label=f"yfinance OHLCV '{yf_symbol}'",
+            timestamp_column="timestamp",
+        )
 
         logger.debug(
             "YFinanceProvider: downloaded %d rows for '%s' (period=%s, interval=%s)",

@@ -196,6 +196,22 @@ def test_get_equity_config_merges_overlay(v3_config_dir: Path) -> None:
     reset_config_cache()
 
 
+def test_load_config_cache_is_scoped_by_directory(tmp_path: Path) -> None:
+    from spectraquant_v3.core.config import load_config, reset_config_cache
+
+    cfg_a = tmp_path / "cfg_a"
+    cfg_b = tmp_path / "cfg_b"
+    cfg_a.mkdir()
+    cfg_b.mkdir()
+    (cfg_a / "base.yaml").write_text("run: {mode: normal}\ncache: {}\nqa: {}\nexecution: {}\nportfolio: {}\n")
+    (cfg_b / "base.yaml").write_text("run: {mode: refresh}\ncache: {}\nqa: {}\nexecution: {}\nportfolio: {}\n")
+
+    reset_config_cache()
+    assert load_config(cfg_a, force_reload=True)["run"]["mode"] == "normal"
+    assert load_config(cfg_b)["run"]["mode"] == "refresh"
+    reset_config_cache()
+
+
 def test_load_config_raises_when_missing(tmp_path: Path) -> None:
     from spectraquant_v3.core.config import load_config, reset_config_cache
 

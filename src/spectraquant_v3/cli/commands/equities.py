@@ -13,7 +13,11 @@ import typer
 
 equity_app = typer.Typer(
     name="equity",
-    help="Equity pipeline commands (yfinance / provider abstraction).",
+    help=(
+        "Equity pipeline commands (India/NSE-first). "
+        "Use canonical NSE tickers like INFY.NS,TCS.NS or "
+        "configure equities.universe.tickers_file for NSE CSV universes."
+    ),
     no_args_is_help=True,
 )
 
@@ -28,6 +32,11 @@ def equity_run(
 
     Stages: universe → ingestion → features → signals →
             meta_policy → allocation → execution → reporting
+
+    NSE-first happy path:
+    - configure ``equities.universe.tickers`` with ``.NS`` tickers, or
+    - configure ``equities.universe.tickers_file`` pointing to an NSE CSV
+      with a ``SYMBOL`` column; bare NSE symbols are canonicalized to ``.NS``.
     """
     from spectraquant_v3.core.config import get_equity_config
     from spectraquant_v3.core.enums import RunMode
@@ -163,9 +172,31 @@ def equity_universe(
     config_dir: str = typer.Option("", "--config-dir", help="Override config/v3/ directory"),
 ) -> None:
     """Print the equity universe after applying quality gates."""
-    typer.echo(
-        "[equity universe] ⚠  Not yet implemented – scaffold only."
-    )
+    from spectraquant_v3.core.config import get_equity_config
+    from spectraquant_v3.core.errors import SpectraQuantError
+    from spectraquant_v3.equities.symbols.registry import resolve_equity_tickers_from_config
+
+    try:
+        cfg = get_equity_config(config_dir or None)
+        tickers = resolve_equity_tickers_from_config(cfg)
+    except SpectraQuantError as exc:
+        typer.echo(f"[equity universe] ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+    except FileNotFoundError as exc:
+        typer.echo(f"[equity universe] ERROR: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if not tickers:
+        typer.echo(
+            "[equity universe] No tickers resolved. "
+            "Configure equities.universe.tickers or equities.universe.tickers_file.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"[equity universe] Resolved {len(tickers)} canonical equity tickers:")
+    for ticker in tickers:
+        typer.echo(f"  - {ticker}")
     raise typer.Exit(0)
 
 

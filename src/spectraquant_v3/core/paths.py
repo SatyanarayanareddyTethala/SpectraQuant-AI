@@ -33,11 +33,19 @@ class ProjectPaths:
             by walking up from this source file, then falls back to cwd.
     """
 
-    def __init__(self, root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        root: str | Path | None = None,
+        *,
+        cache_root: str | Path | None = None,
+        reports_root: str | Path | None = None,
+    ) -> None:
         if root is not None:
             self.root = Path(root).resolve()
         else:
             self.root = self._discover_root()
+        self._cache_root_override = self._resolve_optional_path(cache_root)
+        self._reports_root_override = self._resolve_optional_path(reports_root)
 
     # ------------------------------------------------------------------
     # Root discovery
@@ -76,6 +84,8 @@ class ProjectPaths:
     @property
     def cache_root(self) -> Path:
         """``data/cache/`` shared cache root."""
+        if self._cache_root_override is not None:
+            return self._cache_root_override
         return self.data_dir / "cache"
 
     @property
@@ -101,7 +111,17 @@ class ProjectPaths:
     @property
     def reports_root(self) -> Path:
         """``reports/`` root for all pipeline outputs."""
+        if self._reports_root_override is not None:
+            return self._reports_root_override
         return self.root / "reports"
+
+    def _resolve_optional_path(self, value: str | Path | None) -> Path | None:
+        if value in (None, ""):
+            return None
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = self.root / candidate
+        return candidate.resolve()
 
     @property
     def crypto_reports_dir(self) -> Path:

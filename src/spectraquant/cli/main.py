@@ -520,37 +520,48 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
         panel_dataset = build_price_feature_panel(price_data)
         if not panel_dataset.empty and not use_sentiment and _panel_dataset_is_usable(panel_dataset):
             dataset = panel_dataset.dropna(subset=["date", "ticker", "Close", "ret_1d", "ret_5d", "sma_5", "vol_5", "rsi_14", "label"]).reset_index(drop=True)
-            run_quality_gates_dataset(dataset, config)
-            elapsed = time.perf_counter() - stage_start
-            logger.info(
-                "Dataset assembly summary: rows=%s symbols=%s elapsed=%.2fs sentiment=%s builder=panel",
-                len(dataset),
-                dataset["ticker"].nunique() if "ticker" in dataset.columns else 0,
-                elapsed,
-                use_sentiment,
-            )
-            PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-            register_default_factors()
-            factor_metadata = get_factor_metadata()
-            factor_set_hash = get_factor_set_hash()
-            metadata_payload = {
-                "factor_set_hash": factor_set_hash,
-                "factors": factor_metadata,
-                "feature_schema": sorted(dataset.columns),
-                "date_range": {"start": dataset["date"].min(), "end": dataset["date"].max()},
-                "builder": "panel",
-            }
-            DATASET_METADATA.write_text(json.dumps(metadata_payload, indent=2, default=str))
-            dataset.to_csv(DATASET_CSV, index=False)
-            record_output(str(DATASET_CSV))
-            record_output(str(DATASET_METADATA))
-            try:
-                dataset.to_parquet(DATASET_PARQUET, index=False)
-                record_output(str(DATASET_PARQUET))
-                logger.info("Panel dataset saved to %s and %s", DATASET_PARQUET, DATASET_CSV)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to save dataset parquet %s: %s", DATASET_PARQUET, exc)
-            return dataset
+            if not dataset.empty:
+                eligible_count = dataset["ticker"].nunique() if "ticker" in dataset.columns else 0
+                qa_enforced = isinstance(config, dict) and "qa" in config
+                if qa_enforced and eligible_count < min_eligible_tickers and not bool(config.get("test_mode", {}).get("enabled", config.get("test_mode", False))):
+                    small_universe_threshold = max(min_eligible_tickers, 15)
+                    small_universe = initial_ticker_count <= small_universe_threshold
+                    if eligible_count < eligibility_floor or not small_universe:
+                        raise RuntimeError(
+                            f"Too few eligible tickers after filtering ({eligible_count} < {max(eligibility_floor, min_eligible_tickers if not small_universe else eligibility_floor)}). "
+                            f"initial_tickers={initial_ticker_count}; builder=panel; min_eligible_tickers={min_eligible_tickers}"
+                        )
+                run_quality_gates_dataset(dataset, config)
+                elapsed = time.perf_counter() - stage_start
+                logger.info(
+                    "Dataset assembly summary: rows=%s symbols=%s elapsed=%.2fs sentiment=%s builder=panel",
+                    len(dataset),
+                    dataset["ticker"].nunique() if "ticker" in dataset.columns else 0,
+                    elapsed,
+                    use_sentiment,
+                )
+                PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+                register_default_factors()
+                factor_metadata = get_factor_metadata()
+                factor_set_hash = get_factor_set_hash()
+                metadata_payload = {
+                    "factor_set_hash": factor_set_hash,
+                    "factors": factor_metadata,
+                    "feature_schema": sorted(dataset.columns),
+                    "date_range": {"start": dataset["date"].min(), "end": dataset["date"].max()},
+                    "builder": "panel",
+                }
+                DATASET_METADATA.write_text(json.dumps(metadata_payload, indent=2, default=str))
+                dataset.to_csv(DATASET_CSV, index=False)
+                record_output(str(DATASET_CSV))
+                record_output(str(DATASET_METADATA))
+                try:
+                    dataset.to_parquet(DATASET_PARQUET, index=False)
+                    record_output(str(DATASET_PARQUET))
+                    logger.info("Panel dataset saved to %s and %s", DATASET_PARQUET, DATASET_CSV)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to save dataset parquet %s: %s", DATASET_PARQUET, exc)
+                return dataset
 
     records = []
     skipped_missing_close = 0
@@ -734,6 +745,11 @@ def _build_dataset_from_prices(config: Dict) -> pd.DataFrame:
 
     dataset = pd.concat(records, ignore_index=True)
     dataset = dataset.sort_values("date")
+    if dataset.empty:
+        raise RuntimeError(
+            "Dataset assembly produced zero rows after feature engineering and filtering. "
+            "Check universe resolution and cached price history."
+        )
     run_quality_gates_dataset(dataset, config)
     logger.info(
         "Dataset assembly summary: rows=%s symbols=%s elapsed=%.2fs sentiment=%s builder=loop",

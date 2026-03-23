@@ -388,6 +388,23 @@ class TestConfigValidation:
             validate_config({})
 
 
+class TestEquityTickerResolution:
+    def test_resolve_equity_tickers_from_explicit_list(self) -> None:
+        from spectraquant_v3.equities.symbols.registry import resolve_equity_tickers_from_config
+
+        cfg = {"equities": {"universe": {"tickers": ["infy", "TCS.NS", " infy "]}}}
+        assert resolve_equity_tickers_from_config(cfg) == ["INFY.NS", "TCS.NS"]
+
+    def test_resolve_equity_tickers_from_nse_file(self, tmp_path: Path) -> None:
+        from spectraquant_v3.equities.symbols.registry import resolve_equity_tickers_from_config
+
+        universe_file = tmp_path / "nse.csv"
+        universe_file.write_text("SYMBOL\nINFY\nTCS\n")
+        cfg = {"equities": {"universe": {"tickers_file": str(universe_file)}}}
+
+        assert resolve_equity_tickers_from_config(cfg) == ["INFY.NS", "TCS.NS"]
+
+
 class TestGetRunModeFromConfig:
     def test_reads_from_config(self, full_config: dict) -> None:
         from spectraquant_v3.core.config import get_run_mode_from_config
@@ -618,18 +635,20 @@ class TestManifestEnhancements:
 
     def test_from_file_raises_on_corrupt_json(self, tmp_path: Path) -> None:
         from spectraquant_v3.core.manifest import RunManifest
+        from spectraquant_v3.core.errors import ManifestValidationError
 
         bad = tmp_path / "bad.json"
         bad.write_text("{not valid json")
-        with pytest.raises(ValueError, match="Cannot parse"):
+        with pytest.raises(ManifestValidationError, match="Cannot parse"):
             RunManifest.from_file(bad)
 
     def test_from_file_raises_on_missing_fields(self, tmp_path: Path) -> None:
         from spectraquant_v3.core.manifest import RunManifest
+        from spectraquant_v3.core.errors import ManifestValidationError
 
         incomplete = tmp_path / "incomplete.json"
         incomplete.write_text('{"run_id": "x"}')
-        with pytest.raises(ValueError, match="missing required fields"):
+        with pytest.raises(ManifestValidationError, match="missing required fields"):
             RunManifest.from_file(incomplete)
 
 

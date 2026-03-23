@@ -84,6 +84,10 @@ class ManifestWriteError(SpectraQuantError):
     """Raised when the run manifest file cannot be written to disk."""
 
 
+class ManifestValidationError(SpectraQuantError):
+    """Raised when a manifest payload is missing required fields or is invalid."""
+
+
 class StageAbortError(SpectraQuantError):
     """Raised when a pipeline stage must halt due to a fatal data condition."""
 

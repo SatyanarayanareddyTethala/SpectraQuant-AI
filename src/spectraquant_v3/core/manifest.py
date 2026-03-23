@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from spectraquant_v3.core.enums import AssetClass, RunMode, RunStatus
+from spectraquant_v3.core.errors import ManifestValidationError, ManifestWriteError
 
 
 class RunManifest:
@@ -100,26 +101,31 @@ class RunManifest:
             Path of the written manifest file.
 
         Raises:
-            OSError: If the directory cannot be created or file cannot be written.
+            ManifestWriteError: If the directory cannot be created or file cannot be written.
         """
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = (
-            f"run_manifest_{self.asset_class.value}_{ts}_{self.run_id}.json"
-        )
-        path = self.output_dir / filename
-        payload: dict[str, Any] = {
-            "run_id": self.run_id,
-            "asset_class": self.asset_class.value,
-            "run_mode": self.run_mode.value,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-            "status": self.status.value,
-            "stages": self.stages,
-            "errors": self.errors,
-        }
-        path.write_text(json.dumps(payload, indent=2))
-        return path
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            filename = (
+                f"run_manifest_{self.asset_class.value}_{ts}_{self.run_id}.json"
+            )
+            path = self.output_dir / filename
+            payload: dict[str, Any] = {
+                "run_id": self.run_id,
+                "asset_class": self.asset_class.value,
+                "run_mode": self.run_mode.value,
+                "started_at": self.started_at,
+                "completed_at": self.completed_at,
+                "status": self.status.value,
+                "stages": self.stages,
+                "errors": self.errors,
+            }
+            path.write_text(json.dumps(payload, indent=2))
+            return path
+        except OSError as exc:
+            raise ManifestWriteError(
+                f"Failed to write manifest for run '{self.run_id}' to {self.output_dir}: {exc}"
+            ) from exc
 
     @classmethod
     def from_file(cls, path: str | Path) -> "RunManifest":
@@ -144,7 +150,9 @@ class RunManifest:
         try:
             data = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Cannot parse manifest JSON at {path}: {exc}") from exc
+            raise ManifestValidationError(
+                f"Cannot parse manifest JSON at {path}: {exc}"
+            ) from exc
 
         try:
             obj = cls(
@@ -159,7 +167,7 @@ class RunManifest:
             obj.stages = data.get("stages", {})
             obj.errors = data.get("errors", [])
         except (KeyError, ValueError) as exc:
-            raise ValueError(
+            raise ManifestValidationError(
                 f"Manifest at {path} is missing required fields: {exc}"
             ) from exc
 
