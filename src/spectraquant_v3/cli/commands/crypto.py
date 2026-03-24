@@ -29,49 +29,35 @@ def crypto_run(
     Stages: universe → ingestion → features → signals →
             meta_policy → allocation → execution → reporting
     """
-    from spectraquant_v3.core import config as config_mod
-    from spectraquant_v3.core.enums import RunMode
-    from spectraquant_v3.core.errors import SpectraQuantError, UniverseValidationError
-    from spectraquant_v3.pipeline.crypto_pipeline import run_crypto_pipeline
+    from spectraquant_v3.service.models import RunSubmissionRequest
+    from spectraquant_v3.service.orchestrator import execute_submission
+    from spectraquant_v3.service.run_registry import RunRegistry
 
-    try:
-        run_mode = RunMode(mode.lower())
-    except ValueError:
+    if mode.lower() not in {"normal", "test", "refresh"}:
         typer.echo(f"[crypto run] ERROR: invalid --mode={mode!r}. Use normal|test|refresh.", err=True)
         raise typer.Exit(1)
 
-    try:
-        cfg = config_mod.get_crypto_config(config_dir or None)
-    except FileNotFoundError as exc:
-        typer.echo(f"[crypto run] ERROR: {exc}", err=True)
-        raise typer.Exit(1)
-
-    # Inject hybrid universe symbols when a universe file is configured.
-    universe_file = cfg.get("universe", {}).get("file", "")
-    if universe_file:
-        from spectraquant_v3.core.universe_loader import inject_universe_into_config
-
-        try:
-            cfg, _universe = inject_universe_into_config(cfg, universe_file)
-            crypto_count = len(_universe.get("crypto", []))
-            typer.echo(
-                f"[crypto run] Loaded hybrid universe from {universe_file!r} "
-                f"({crypto_count} crypto symbols)"
-            )
-        except (FileNotFoundError, UniverseValidationError) as exc:
-            typer.echo(f"[crypto run] Universe ERROR: {exc}", err=True)
-            raise typer.Exit(1)
-
-    typer.echo(f"[crypto run] mode={mode} dry_run={dry_run} – starting pipeline …")
-    try:
-        result = run_crypto_pipeline(cfg, run_mode=run_mode, dry_run=dry_run)
+    request = RunSubmissionRequest(
+        asset_class="crypto",
+        execution_mode="research",
+        run_mode=mode.lower(),
+        dry_run=dry_run,
+        idempotency_key=f"cli-crypto-{mode.lower()}-{int(dry_run)}",
+        config_dir=config_dir or None,
+    )
+    outcome = execute_submission(request, RunRegistry("reports/control_plane/run_registry.sqlite"))
+    if outcome.error is not None:
         typer.echo(
-            f"[crypto run] completed  status={result['status']} "
-            f"universe={len(result['universe'])} symbols"
+            f"[crypto run] PIPELINE ERROR: code={outcome.error.code.value} stage={outcome.error.stage} msg={outcome.error.message}",
+            err=True,
         )
-    except SpectraQuantError as exc:
-        typer.echo(f"[crypto run] PIPELINE ERROR: {exc}", err=True)
         raise typer.Exit(1)
+
+    result = outcome.result.get("pipeline", {}) if isinstance(outcome.result, dict) else {}
+    typer.echo(
+        f"[crypto run] completed  run_id={outcome.run_id} status={result.get('status', outcome.state)} "
+        f"universe={len(result.get('universe', []))} symbols"
+    )
 
 
 @crypto_app.command("download")

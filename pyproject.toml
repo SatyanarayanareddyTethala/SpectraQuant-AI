@@ -30,6 +30,8 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.0",
   "typing_extensions>=4.10",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -86,6 +88,7 @@ all = [
 [project.scripts]
 spectraquant = "spectraquant.cli.main:main"
 sqv3 = "spectraquant_v3.cli.main:main"
+sqv3-api = "spectraquant_v3.service.api:main"
 
 [tool.setuptools]
 include-package-data = true
