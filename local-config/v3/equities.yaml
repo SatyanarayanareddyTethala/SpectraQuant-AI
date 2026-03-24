@@ -1,0 +1,94 @@
+# SpectraQuant-AI-V3 — Equity Pipeline Configuration
+# Use with: sqv3 equity run
+#
+# CRITICAL: This config is for the equity pipeline ONLY.
+# Do NOT mix with crypto.yaml in a single run invocation.
+# Doing so raises MixedAssetClassRunError.
+
+equities:
+  # ---------------------------------------------------------------------------
+  # Data providers
+  # ---------------------------------------------------------------------------
+  # Primary OHLCV provider for research mode.
+  # Designed as an abstraction layer – replace with a paid vendor adapter
+  # without changing downstream modules.
+  primary_ohlcv_provider: yfinance
+
+  # ---------------------------------------------------------------------------
+  # Universe
+  # ---------------------------------------------------------------------------
+  universe:
+    tickers:
+      - RELIANCE.NS
+      - TCS.NS
+      - INFY.NS
+      - HDFCBANK.NS
+      - ICICIBANK.NS
+      - HINDUNILVR.NS
+      - WIPRO.NS
+      - BHARTIARTL.NS
+      - SBIN.NS
+      - KOTAKBANK.NS
+    # Optional: point to a CSV file with a 'ticker' column
+    # tickers_file: data/equities/universe/universe.csv
+    exclude: []
+
+  # ---------------------------------------------------------------------------
+  # Cache / run mode
+  # ---------------------------------------------------------------------------
+  prices_dir: data/cache/equities/prices
+  run_mode: normal                        # normal | test | refresh
+
+  # ---------------------------------------------------------------------------
+  # Universe quality gates (applied post-download)
+  # ---------------------------------------------------------------------------
+  quality_gate:
+    min_price: 10.0
+    min_avg_volume: 100_000
+    min_history_days: 60
+
+  # ---------------------------------------------------------------------------
+  # Optional data modules
+  # ---------------------------------------------------------------------------
+  news_enabled: false                     # RSS / generic news provider abstraction
+
+  # ---------------------------------------------------------------------------
+  # Signal agents configuration
+  # ---------------------------------------------------------------------------
+  signals:
+    momentum_lookback: 20
+    rsi_period: 14
+    mean_reversion_window: 20
+    breakout_window: 52
+
+  # ---------------------------------------------------------------------------
+  # Reports
+  # ---------------------------------------------------------------------------
+  reports_dir: reports/equities
+
+# ---------------------------------------------------------------------------
+# Portfolio (equity-specific overrides on top of base.yaml defaults)
+# ---------------------------------------------------------------------------
+portfolio:
+  max_weight: 0.20
+  min_signal_threshold: 0.05
+  min_confidence: 0.15
+  rebalance_frequency: monthly
+
+# ---------------------------------------------------------------------------
+# Execution (paper only; broker live adapter is a placeholder)
+# ---------------------------------------------------------------------------
+execution:
+  mode: paper
+  slippage_bps: 5
+  transaction_cost_bps: 10
+
+# ---------------------------------------------------------------------------
+# Data provider config (used by price downloader)
+# ---------------------------------------------------------------------------
+data:
+  provider: yfinance
+  prices_dir: data/cache/equities/prices
+  batch_size: 20
+  max_retries: 3
+  daily_retention_years: 5

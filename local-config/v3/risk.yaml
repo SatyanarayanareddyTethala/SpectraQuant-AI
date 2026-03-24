@@ -1,0 +1,29 @@
+risk:
+  max_gross_leverage: 1.0
+  max_net_leverage: 1.0
+  max_single_position_weight: 0.2
+  max_concentration: 0.4
+  max_turnover: 0.3
+  min_cash_buffer: 0.0
+  volatility_target: &id001
+    target_vol: 0.15
+    vol_lookback_days: 20
+    min_vol: 0.01
+    max_vol: 2.0
+  risk_budget:
+    scheme: equal
+  drawdown: &id003
+    max_drawdown: 0.25
+    alert_drawdown: 0.15
+  execution:
+    max_annual_cost_bps: 200
+    slippage_bps: 5
+    transaction_cost_bps: 5
+    spread_bps: 2
+    turnover_penalty_bps: 1
+  positions: &id002
+    max_positions: 50
+    min_position_weight: 0.005
+vol_target: *id001
+position_limits: *id002
+drawdown: *id003

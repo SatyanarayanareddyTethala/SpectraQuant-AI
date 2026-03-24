@@ -1,0 +1,28 @@
+news:
+  enabled: false
+  rss_feeds: &id001
+    crypto:
+    - url: https://cointelegraph.com/rss
+      name: CoinTelegraph
+    - url: https://decrypt.co/feed
+      name: Decrypt
+    equity:
+    - url: https://feeds.finance.yahoo.com/rss/2.0/headline
+      name: YahooFinance
+  cryptopanic:
+    enabled: false
+    filter: rising
+    currencies: []
+  sentiment: &id002
+    enabled: false
+    model: finbert
+    min_confidence: 0.6
+    lookback_hours: 24
+  storage:
+    format: parquet
+    dir: data/news_cache
+    max_age_days: 30
+providers: *id001
+sentiment: *id002
+aggregation:
+  lookback_hours: 24
