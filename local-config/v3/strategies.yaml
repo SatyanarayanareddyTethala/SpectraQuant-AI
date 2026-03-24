@@ -1,0 +1,91 @@
+# SpectraQuant-AI-V3 — Strategy Definitions
+# Declarative strategy registry configuration.
+# Field names match StrategyDefinition (universe_profile, rebalance_freq, risk_config,
+# feature_profile) and agent/allocator names match their respective registries.
+
+strategies:
+
+  crypto_momentum_v1:
+    asset_class: crypto
+    description: Crypto momentum strategy using RSI + momentum signals
+    universe_profile: static
+    feature_profile: default
+    agents:
+      - crypto_momentum_v1
+    policy: confidence_filter_v1
+    allocator: rank_vol_target_allocator
+    rebalance_freq: W
+    risk_config:
+      max_weight: 0.20
+      max_gross_leverage: 1.0
+    enabled: true
+
+  crypto_momentum_v2:
+    asset_class: crypto
+    description: Crypto momentum with volatility targeting
+    universe_profile: dynamic_topN
+    top_n: 15
+    feature_profile: default
+    agents:
+      - crypto_momentum_v1
+    policy: confidence_filter_v1
+    allocator: vol_target_v1
+    rebalance_freq: W
+    risk_config:
+      max_weight: 0.25
+      max_gross_leverage: 1.0
+      target_vol: 0.15
+    enabled: true
+
+  crypto_momentum_news_hybrid_v1:
+    asset_class: crypto
+    description: Crypto momentum blended with 24h news sentiment and shock uplift
+    universe_profile: dynamic_topN
+    top_n: 20
+    feature_profile: crypto_with_news
+    agents:
+      - crypto_momentum_news_hybrid_v1
+    policy: confidence_filter_v1
+    allocator: rank_vol_target_allocator
+    rebalance_freq: D
+    signal_blend:
+      momentum_weight: 0.7
+      news_weight: 0.3
+    shock_uplift:
+      threshold: 2.0
+      max_uplift: 0.15
+    risk_config:
+      max_weight: 0.20
+      max_gross_leverage: 1.0
+      target_vol: 0.15
+    enabled: true
+
+  equity_momentum_v1:
+    asset_class: equity
+    description: Equity momentum strategy
+    universe_profile: static
+    feature_profile: default
+    agents:
+      - equity_momentum_v1
+    policy: confidence_filter_v1
+    allocator: equal_weight
+    rebalance_freq: ME
+    risk_config:
+      max_weight: 0.20
+      max_gross_leverage: 1.0
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Strategy portfolio definitions
+# ---------------------------------------------------------------------------
+strategy_portfolios:
+
+  multi_alpha_v1:
+    description: Combined crypto + equity momentum portfolio
+    strategy_ids:
+      - crypto_momentum_v1
+      - equity_momentum_v1
+    weighting_scheme: equal
+    rebalance_frequency: M
+    max_strategy_weight: 0.7
+    enabled: true

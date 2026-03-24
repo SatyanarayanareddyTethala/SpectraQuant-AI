@@ -1,0 +1,71 @@
+# SpectraQuant-AI-V3 — Base Configuration
+# Shared defaults for all pipelines.
+# Asset-class-specific overrides live in crypto.yaml and equities.yaml.
+#
+# IMPORTANT: Do NOT set asset-class-specific keys here.
+# Keys like `crypto.*` and `equities.*` belong in their respective files.
+
+# ---------------------------------------------------------------------------
+# Run behaviour
+# ---------------------------------------------------------------------------
+run:
+  # Default run mode: normal | test | refresh
+  # Override at runtime via env var SPECTRAQUANT_RUN_MODE
+  mode: normal
+
+  # When true, skip all writes and network calls (dry-run / smoke-test)
+  dry_run: false
+
+  # Output root for manifests, QA matrices, and stage outputs
+  reports_root: reports
+
+  # Log level: DEBUG | INFO | WARNING | ERROR
+  log_level: INFO
+
+# ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+cache:
+  # Root cache directory (asset-class subdirs are created automatically)
+  root: data/cache
+
+  # Number of days of OHLCV data required before a symbol is considered valid
+  min_history_days: 60
+
+# ---------------------------------------------------------------------------
+# QA / data quality gates (shared baseline thresholds)
+# ---------------------------------------------------------------------------
+qa:
+  # Abort run when fewer than this fraction of symbols have OHLCV data
+  min_ohlcv_coverage: 1.0   # 1.0 = all symbols must have data (fail-loud default)
+
+  # Maximum fraction of missing trading days tolerated per symbol
+  max_missing_day_fraction: 0.10
+
+# ---------------------------------------------------------------------------
+# Execution (paper-only by default; live adapters are placeholders)
+# ---------------------------------------------------------------------------
+execution:
+  mode: paper               # paper | live (live requires explicit opt-in)
+  slippage_bps: 5
+  transaction_cost_bps: 5
+  volume_participation: 0.10
+
+# ---------------------------------------------------------------------------
+# Portfolio defaults (overridable per asset class)
+# ---------------------------------------------------------------------------
+portfolio:
+  max_weight: 0.20          # maximum weight per single symbol
+  max_gross_leverage: 1.0
+  max_turnover: 0.30
+  concentration_limit: 0.40 # top-N weight cap
+  rebalance_frequency: daily
+
+# ---------------------------------------------------------------------------
+# Universe (hybrid: equities + crypto + FX)
+# ---------------------------------------------------------------------------
+universe:
+  # Path to the hybrid universe CSV file (relative to repo root).
+  # Set to empty string or omit to use the per-asset-class symbols from
+  # equities.yaml / crypto.yaml instead of the hybrid file.
+  file: data/universe/hybrid_universe.csv
