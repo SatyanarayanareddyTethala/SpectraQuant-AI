@@ -5,6 +5,7 @@
 - **n8n owns orchestration**: schedule, approvals, retries, alerts, incident routing.
 - **SpectraQuant V3 owns quant logic**: universe, ingestion QA, signals, policy, allocation.
 - Control plane service (`spectraquant_v3.service.api`) provides stable machine interfaces.
+- **Execution model is now async**: `POST /runs` only queues a run; background worker executes and persists lifecycle events.
 
 ## Endpoint Map
 
@@ -12,10 +13,57 @@ Base service: `uvicorn spectraquant_v3.service.api:app --host 0.0.0.0 --port 800
 
 - `GET /health` — liveness
 - `GET /doctor` — environment/config readiness
-- `POST /runs` — submit run (idempotent by key)
+- `POST /runs` — submit run (idempotent by key, async queued)
+- `POST /runs/{run_id}/cancel` — request cancellation
 - `GET /runs` — list recent runs
 - `GET /runs/{run_id}` — run status, events, manifest
 - `GET /runs/{run_id}/artifacts` — indexed artifacts
+
+All control-plane endpoints require `X-API-Key`.
+
+## Async Queue + Worker Design
+
+1. API validates auth/scope/approval token and writes queued run in registry.
+2. API returns immediately with `state=queued`.
+3. Worker dequeues task, acquires orchestration lock, transitions to `running`.
+4. Worker executes config → pipeline → invariant checks.
+5. Worker transitions run to terminal (`success`, `failed`, `cancelled`, `timed_out`) and persists result.
+
+### Run State Machine
+
+Legal states:
+- `queued`
+- `running`
+- `cancelling`
+- `cancelled` (terminal)
+- `success` (terminal)
+- `failed` (terminal)
+- `timed_out` (terminal)
+
+Allowed transitions are strictly enforced in registry.
+
+## Auth + Approval Model
+
+### API Keys + Scopes
+
+`SQ_CONTROL_PLANE_KEYS` format:
+
+```text
+a-key:research,paper;b-key:research,paper,live
+```
+
+- Scope must include requested `execution_mode`.
+- Unauthorized/missing keys are rejected at API layer.
+
+### Live Approval Gate
+
+- Set `SQ_LIVE_APPROVAL_TOKEN` in control-plane environment.
+- `POST /runs` with `execution_mode=live` must include `approval_token`.
+- Invalid/missing approval token is denied and audited.
+
+### Immutable Audit Ledger
+
+Sensitive submission/cancellation attempts are inserted into `audit_log` (append-only table with update/delete triggers blocked).
 
 ## Request/Response Contracts
 
@@ -31,48 +79,34 @@ Base service: `uvicorn spectraquant_v3.service.api:app --host 0.0.0.0 --port 800
 }
 ```
 
-Success envelope:
+Success envelope (submission accepted):
 
 ```json
 {
   "ok": true,
   "data": {
     "run_id": "abc123ef",
-    "state": "success",
-    "result": {
-      "pipeline": {"status": "success"},
-      "artifacts": [],
-      "run_dir": "reports/equities/abc123ef"
-    }
+    "state": "queued",
+    "result": {}
   },
   "error": {}
 }
 ```
 
-Failure envelope:
+## Cancellation Semantics
 
-```json
-{
-  "ok": false,
-  "data": {},
-  "error": {
-    "code": "EMPTY_UNIVERSE",
-    "message": "...",
-    "stage": "universe",
-    "retriable": false,
-    "run_id": "abc123ef"
-  }
-}
-```
+- `POST /runs/{run_id}/cancel` marks queued runs as `cancelled` immediately.
+- Running runs transition to `cancelling`, then worker finalizes as `cancelled` at safe checkpoint.
+- Terminal runs ignore cancellation mutation.
 
-## Recommended n8n Workflows
+## Recommended n8n Polling + Retry Logic
 
-1. **Pre-flight**: Cron → `/doctor` → fail fast if checks false.
-2. **Research run**: Schedule → Approval (optional) → `POST /runs` (`execution_mode=research`).
-3. **Paper execution**: Trigger from successful research run and policy gates.
-4. **Live execution gate**: Manual approval + risk checklist + `execution_mode=live`.
-5. **Incident response**: On `ok=false`, branch by `error.code`; create incident ticket, attach `/runs/{run_id}` and `/artifacts`.
-6. **Self-heal loop**: Retry only when `retriable=true`; hard stop otherwise.
+1. Submit run (`POST /runs`) and persist `run_id`.
+2. Poll `GET /runs/{run_id}` every 5–15s with capped backoff.
+3. Stop polling when state enters terminal set.
+4. Retry submission only when API-level error says `retriable=true`.
+5. For `RUN_LOCKED` or transient `INTERNAL_ERROR`, use exponential backoff with jitter.
+6. For non-retriable states (`CONFIG_ERROR`, invariants, scope/approval denials), route to incident workflow.
 
 ## Failure Branching Model
 

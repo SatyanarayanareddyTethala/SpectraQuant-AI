@@ -2,20 +2,52 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 
 from spectraquant_v3.core.failures import FailureCode
 from spectraquant_v3.diagnostics.invariants import list_run_artifacts
 from spectraquant_v3.service.models import ApiEnvelope, RunSubmissionRequest
-from spectraquant_v3.service.orchestrator import execute_submission, load_manifest_for_run
+from spectraquant_v3.service.orchestrator import ControlPlaneOrchestrator, load_manifest_for_run, validate_live_approval
 from spectraquant_v3.service.run_registry import RunRegistry
+
+
+def _load_key_permissions() -> dict[str, set[str]]:
+    raw = os.getenv("SQ_CONTROL_PLANE_KEYS", "")
+    if not raw:
+        return {"dev-research-key": {"research", "paper"}, "dev-live-key": {"research", "paper", "live"}}
+    mapping: dict[str, set[str]] = {}
+    for pair in raw.split(";"):
+        if not pair.strip() or ":" not in pair:
+            continue
+        key, scopes = pair.split(":", 1)
+        mapping[key.strip()] = {s.strip() for s in scopes.split(",") if s.strip()}
+    return mapping
 
 
 def create_app(registry_path: str | Path = "reports/control_plane/run_registry.sqlite") -> FastAPI:
     registry = RunRegistry(registry_path)
-    app = FastAPI(title="SpectraQuant V3 Control Plane", version="1.0.0")
+    orchestrator = ControlPlaneOrchestrator(registry)
+    key_permissions = _load_key_permissions()
+
+    app = FastAPI(title="SpectraQuant V3 Control Plane", version="1.1.0")
+
+    @app.on_event("startup")
+    def _startup() -> None:
+        orchestrator.start()
+
+    @app.on_event("shutdown")
+    def _shutdown() -> None:
+        orchestrator.stop()
+
+    def _require_key(x_api_key: str | None = Header(default=None)) -> str:
+        if not x_api_key:
+            raise HTTPException(status_code=401, detail={"code": FailureCode.UNAUTHORIZED.value, "message": "Missing X-API-Key"})
+        if x_api_key not in key_permissions:
+            raise HTTPException(status_code=403, detail={"code": FailureCode.FORBIDDEN.value, "message": "Unknown API key"})
+        return x_api_key
 
     @app.get("/health", response_model=ApiEnvelope)
     def health() -> ApiEnvelope:
@@ -34,28 +66,36 @@ def create_app(registry_path: str | Path = "reports/control_plane/run_registry.s
         return ApiEnvelope(ok=ok, data={"checks": checks})
 
     @app.post("/runs", response_model=ApiEnvelope)
-    def submit_run(request: RunSubmissionRequest) -> ApiEnvelope:
-        outcome = execute_submission(request, registry)
-        if outcome.error is not None:
-            return ApiEnvelope(
-                ok=False,
-                error={
-                    "code": outcome.error.code.value,
-                    "message": outcome.error.message,
-                    "stage": outcome.error.stage,
-                    "retriable": outcome.error.retriable,
-                    "run_id": outcome.run_id,
-                },
-            )
+    def submit_run(request: RunSubmissionRequest, x_api_key: str | None = Header(default=None)) -> ApiEnvelope:
+        api_key = _require_key(x_api_key)
+        scopes = key_permissions[api_key]
+        if request.execution_mode not in scopes:
+            registry.audit(actor=api_key, action="submit_run", run_id=request.run_id or "pending", execution_mode=request.execution_mode, outcome="denied", details={"reason": "insufficient_scope"})
+            return ApiEnvelope(ok=False, error={"code": FailureCode.FORBIDDEN.value, "message": f"API key lacks scope for execution_mode={request.execution_mode}", "retriable": False})
+        try:
+            validate_live_approval(request)
+        except Exception as exc:  # noqa: BLE001
+            registry.audit(actor=api_key, action="submit_run", run_id=request.run_id or "pending", execution_mode=request.execution_mode, outcome="denied", details={"reason": str(exc)})
+            return ApiEnvelope(ok=False, error={"code": FailureCode.CONFIG_ERROR.value, "message": str(exc), "stage": "config", "retriable": False})
+
+        outcome = orchestrator.submit(request, actor=api_key)
         return ApiEnvelope(ok=True, data={"run_id": outcome.run_id, "state": outcome.state, "result": outcome.result})
 
+    @app.post("/runs/{run_id}/cancel", response_model=ApiEnvelope)
+    def cancel_run(run_id: str, x_api_key: str | None = Header(default=None)) -> ApiEnvelope:
+        api_key = _require_key(x_api_key)
+        outcome = orchestrator.cancel(run_id, actor=api_key)
+        return ApiEnvelope(ok=True, data={"run_id": run_id, "state": outcome.state})
+
     @app.get("/runs", response_model=ApiEnvelope)
-    def list_runs(limit: int = 50) -> ApiEnvelope:
+    def list_runs(limit: int = 50, x_api_key: str | None = Header(default=None)) -> ApiEnvelope:
+        _require_key(x_api_key)
         rows = [row.model_dump(mode="json") for row in registry.list_runs(limit=limit)]
         return ApiEnvelope(ok=True, data={"runs": rows})
 
     @app.get("/runs/{run_id}", response_model=ApiEnvelope)
-    def get_run(run_id: str) -> ApiEnvelope:
+    def get_run(run_id: str, x_api_key: str | None = Header(default=None)) -> ApiEnvelope:
+        _require_key(x_api_key)
         row = registry.get_run(run_id)
         if row is None:
             raise HTTPException(status_code=404, detail={"code": FailureCode.INVALID_REQUEST.value, "message": f"Unknown run_id '{run_id}'"})
@@ -68,7 +108,8 @@ def create_app(registry_path: str | Path = "reports/control_plane/run_registry.s
         return ApiEnvelope(ok=True, data=payload)
 
     @app.get("/runs/{run_id}/artifacts", response_model=ApiEnvelope)
-    def get_run_artifacts(run_id: str) -> ApiEnvelope:
+    def get_run_artifacts(run_id: str, x_api_key: str | None = Header(default=None)) -> ApiEnvelope:
+        _require_key(x_api_key)
         row = registry.get_run(run_id)
         if row is None:
             raise HTTPException(status_code=404, detail={"code": FailureCode.INVALID_REQUEST.value, "message": f"Unknown run_id '{run_id}'"})
@@ -87,7 +128,6 @@ app = create_app()
 
 
 def main() -> None:
-    """Run control-plane API with uvicorn."""
     import uvicorn
 
     uvicorn.run("spectraquant_v3.service.api:app", host="0.0.0.0", port=8000, reload=False)

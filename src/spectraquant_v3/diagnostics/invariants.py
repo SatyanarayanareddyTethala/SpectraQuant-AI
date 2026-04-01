@@ -31,6 +31,15 @@ def validate_result_invariants(result: dict[str, Any]) -> list[InvariantViolatio
     """Validate post-run invariants over pipeline result payload."""
     violations: list[InvariantViolation] = []
 
+    if result.get("status") == "success" and not result.get("run_id"):
+        violations.append(
+            InvariantViolation(
+                code=FailureCode.MANIFEST_INVALID,
+                stage="reporting",
+                message="Successful pipeline payload is missing run_id.",
+            )
+        )
+
     universe = result.get("universe") or []
     if not universe:
         violations.append(
@@ -38,6 +47,15 @@ def validate_result_invariants(result: dict[str, Any]) -> list[InvariantViolatio
                 code=FailureCode.EMPTY_UNIVERSE,
                 stage="universe",
                 message="Pipeline returned success payload with an empty universe.",
+            )
+        )
+
+    if isinstance(universe, list) and any(not isinstance(s, str) or not s.strip() for s in universe):
+        violations.append(
+            InvariantViolation(
+                code=FailureCode.INVALID_REQUEST,
+                stage="universe",
+                message="Universe contains malformed/empty symbols.",
             )
         )
 
@@ -49,6 +67,15 @@ def validate_result_invariants(result: dict[str, Any]) -> list[InvariantViolatio
                 code=FailureCode.DATE_ALIGNMENT,
                 stage="signals",
                 message="Signal payload includes symbols outside declared universe.",
+            )
+        )
+
+    if any("/" in s for s in universe) and any(".NS" in s for s in universe):
+        violations.append(
+            InvariantViolation(
+                code=FailureCode.INVALID_MODE,
+                stage="universe",
+                message="Cross-asset contamination detected in universe symbols.",
             )
         )
 
@@ -112,6 +139,25 @@ def validate_result_invariants(result: dict[str, Any]) -> list[InvariantViolatio
                     message=f"Successful run missing required artefacts: {missing}",
                 )
             )
+        for key, value in artefact_paths.items():
+            if not isinstance(key, str) or not isinstance(value, str) or not value:
+                violations.append(
+                    InvariantViolation(
+                        code=FailureCode.ARTIFACT_MISSING,
+                        stage="reporting",
+                        message="Artifact schema contains malformed entries.",
+                    )
+                )
+                break
+
+        if not signals and not allocations:
+            violations.append(
+                InvariantViolation(
+                    code=FailureCode.PIPELINE_FAILURE,
+                    stage="pipeline",
+                    message="Run succeeded without signals and allocations outputs.",
+                )
+            )
 
     return violations
 
@@ -125,14 +171,7 @@ def list_run_artifacts(run_dir: str | Path) -> list[dict[str, Any]]:
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        records.append(
-            {
-                "name": path.name,
-                "path": str(path),
-                "size_bytes": path.stat().st_size,
-                "suffix": path.suffix,
-            }
-        )
+        records.append({"name": path.name, "path": str(path), "size_bytes": path.stat().st_size, "suffix": path.suffix})
     return records
 
 
@@ -141,16 +180,7 @@ def compare_run_reports(healthy_run_report: str | Path, failed_run_report: str |
     healthy = json.loads(Path(healthy_run_report).read_text())
     failed = json.loads(Path(failed_run_report).read_text())
 
-    keys = [
-        "universe_size",
-        "signals_ok",
-        "signals_no_signal",
-        "signals_error",
-        "policy_passed",
-        "policy_blocked",
-        "active_positions",
-        "total_weight",
-    ]
+    keys = ["universe_size", "signals_ok", "signals_no_signal", "signals_error", "policy_passed", "policy_blocked", "active_positions", "total_weight"]
     delta = {
         key: {
             "healthy": healthy.get(key),
@@ -159,8 +189,4 @@ def compare_run_reports(healthy_run_report: str | Path, failed_run_report: str |
         }
         for key in keys
     }
-    return {
-        "healthy_run_id": healthy.get("run_id", ""),
-        "failed_run_id": failed.get("run_id", ""),
-        "metrics": delta,
-    }
+    return {"healthy_run_id": healthy.get("run_id", ""), "failed_run_id": failed.get("run_id", ""), "metrics": delta}

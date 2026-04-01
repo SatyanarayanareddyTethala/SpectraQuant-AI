@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 ExecutionMode = Literal["research", "paper", "live"]
 AssetClass = Literal["crypto", "equity"]
-RunState = Literal["queued", "running", "success", "failed"]
+RunState = Literal["queued", "running", "cancelling", "cancelled", "success", "failed", "timed_out"]
 
 
 class RunSubmissionRequest(BaseModel):
@@ -21,6 +21,7 @@ class RunSubmissionRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=128)
     config_dir: str | None = None
     run_id: str | None = None
+    approval_token: str | None = None
 
 
 class StageEvent(BaseModel):
@@ -44,6 +45,9 @@ class RunRecord(BaseModel):
     error_code: str = ""
     error_message: str = ""
     result: dict[str, Any] = Field(default_factory=dict)
+    cancellation_requested_at: datetime | None = None
+    terminal_at: datetime | None = None
+    terminal_reason: str = ""
 
 
 class ApiEnvelope(BaseModel):
